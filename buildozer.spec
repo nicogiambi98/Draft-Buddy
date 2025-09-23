@@ -12,7 +12,7 @@ source.include_exts = py,kv,png,jpg,jpeg,svg,db,wav,ogg,mp3,txt,json
 source.include_patterns = assets/*, events.db
 
 # Core requirements (SQLite is needed at runtime)
-requirements = python3,kivy==2.3.0,sqlite3,pyjnius==1.6.1
+requirements = python3,kivy==2.3.0,sqlite3,pyjnius==1.6.1,cython==3.0.10
 
 # UI settings
 orientation = portrait
