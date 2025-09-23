@@ -28,6 +28,8 @@ p4a.bootstrap = sdl2
 # icon.filename = assets/icon.png
 # presplash.filename = assets/presplash.png
 
+android.archs = arm64-v8a
+
 [buildozer]
 log_level = 2
 warn_on_root = 1
@@ -35,13 +37,12 @@ warn_on_root = 1
 [app:android]
 android.api = 31
 android.minapi = 21
-android.archs = arm64-v8a
 p4a.ndk_api = 21
 
 
 # Ensure Cython 3 is used consistently (works with pyjnius >= 1.6.1)
 p4a.cython = 3.0.10
-p4a.extra_args = --cython=3.0.10
+p4a.extra_args = --cython=3.0.10 --arch=arm64-v8a
 
 # If you need internet or other permissions, add here (not needed for internal DB)
 # android.permissions = INTERNET
