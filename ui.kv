@@ -1,0 +1,461 @@
+#:import dp kivy.metrics.dp
+
+<PlayersScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            Label:
+                markup: True
+                text: "[b]Players[/b]"
+            Button:
+                text: "New Player"
+                size_hint_x: None
+                width: dp(140)
+                on_release: root.manager.current = "newplayer"
+
+        BoxLayout:
+            size_hint_y: None
+            height: dp(36)
+            TextInput:
+                id: filter_input
+                hint_text: "Filter..."
+                on_text: root.filter_players(self.text)
+
+        ScrollView:
+            GridLayout:
+                id: players_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                row_default_height: dp(36)
+
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<NewPlayerScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            markup: True
+            text: "[b]Add New Player[/b]"
+        TextInput:
+            id: name_input
+            hint_text: "Player name"
+            multiline: False
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            Button:
+                text: "Save"
+                on_release:
+                    root.save_player(name_input.text)
+            Button:
+                text: "Back"
+                on_release: root.manager.current = "players"
+
+<CreateEventScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            markup: True
+            text: "[b]Create Event[/b]"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(36)
+            TextInput:
+                id: event_name
+                hint_text: "Event name"
+                multiline: False
+            Spinner:
+                id: event_type
+                text: "draft"
+                values: ["draft", "sealed", "cube"]
+                size_hint_x: None
+                width: dp(120)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(36)
+            TextInput:
+                id: rounds_input
+                hint_text: "Rounds (e.g. 3)"
+                multiline: False
+                input_filter: "int"
+            TextInput:
+                id: round_time
+                hint_text: "Round time (min)"
+                multiline: False
+                input_filter: "int"
+        Label:
+            text: "Select players (or add guests)"
+            size_hint_y: None
+            height: dp(24)
+        ScrollView:
+            GridLayout:
+                id: players_select
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                row_default_height: dp(36)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            TextInput:
+                id: guest_name
+                hint_text: "Guest name (optional)"
+                multiline: False
+            Button:
+                text: "Add guest to list"
+                on_release:
+                    root.add_guest(guest_name.text)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            Button:
+                text: "Start Event"
+                on_release:
+                    root.start_event(event_name.text, event_type.text, rounds_input.text, round_time.text)
+            Button:
+                text: "Cancel"
+                on_release: root.manager.current = "players"
+
+<EventsListScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            markup: True
+            text: "[b]Events[/b]"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            Button:
+                text: "Create Event"
+                size_hint_x: None
+                width: dp(140)
+                on_release: root.manager.current = "createevent"
+            Widget:
+        ScrollView:
+            GridLayout:
+                id: events_grid
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                row_default_height: dp(48)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<EventScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            canvas.before:
+                Color:
+                    rgba: 1,1,1,1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                id: event_title
+                text: root.event_title
+                color: 0,0,0,1
+            Label:
+                id: round_label
+                text: "Round: " + str(root.current_round)
+                color: 0,0,0,1
+            Label:
+                id: timer_label
+                text: root.timer_text
+                color: 0,0,0,1
+                font_size: '20sp'
+                size_hint_x: None
+                width: dp(130)
+            Button:
+                text: "Close Event"
+                size_hint_x: None
+                width: dp(120)
+                on_release: root.close_event()
+        ScrollView:
+            GridLayout:
+                id: matches_grid
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                row_default_height: dp(48)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                id: next_btn
+                text: "Next Round"
+                on_release: root.next_round()
+            Button:
+                text: "Back to Events"
+                on_release: root.manager.current = "eventslist"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<MatchRow>:
+    size_hint_y: None
+    height: dp(48)
+    spacing: dp(8)
+    canvas.before:
+        Color:
+            rgba: (0.95,0.95,0.95,1) if self.bye else (1,1,1,1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Label:
+        text: root.p1_name
+        color: 0,0,0,1
+    Button:
+        id: p1btn
+        text: str(root.score1)
+        size_hint_x: None
+        width: dp(60)
+        on_release: root.cycle_score(1)
+        color: 0,0,0,1
+    Label:
+        text: "-"
+        size_hint_x: None
+        width: dp(20)
+        color: 0,0,0,1
+    Button:
+        id: p2btn
+        text: str(root.score2)
+        size_hint_x: None
+        width: dp(60)
+        on_release: root.cycle_score(2)
+        color: 0,0,0,1
+    Label:
+        text: root.p2_name
+        color: 0,0,0,1
+
+<SeatingScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            markup: True
+            text: "[b]Table Seating[/b]"
+        ScrollView:
+            GridLayout:
+                id: seating_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                row_default_height: dp(32)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            Button:
+                text: "Randomize again"
+                on_release: root.randomize()
+            Button:
+                text: "Begin Round 1"
+                on_release: root.confirm_and_begin()
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<StandingsScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            id: standings_title
+            markup: True
+            text: "[b]Standings[/b]"
+        ScrollView:
+            GridLayout:
+                id: standings_grid
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(4)
+                row_default_height: dp(28)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            Button:
+                text: "Back to Events"
+                on_release: root.manager.current = "eventslist"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<LeagueScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            text: "League Tracker (coming soon)"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<BingoScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            text: "Bingo (coming soon)"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
+
+<DraftTimerScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        BoxLayout:
+            id: timer_container
+            orientation: "vertical"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(56)
+            Button:
+                text: "Players"
+                on_release: root.manager.current = "players"
+            Button:
+                text: "Events"
+                on_release: root.manager.current = "eventslist"
+            Button:
+                text: "League Tracker"
+                on_release: root.manager.current = "league"
+            Button:
+                text: "Bingo"
+                on_release: root.manager.current = "bingo"
+            Button:
+                text: "Draft Timer"
+                on_release: root.manager.current = "drafttimer"
