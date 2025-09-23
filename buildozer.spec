@@ -12,7 +12,7 @@ source.include_exts = py,kv,png,jpg,jpeg,svg,db,wav,ogg,mp3,txt,json
 source.include_patterns = assets/*, events.db
 
 # Core requirements (SQLite is needed at runtime)
-requirements = python3,kivy,sqlite3,pyjnius==1.6.1
+requirements = python3,kivy==2.3.0,sqlite3,pyjnius==1.6.1
 
 # UI settings
 orientation = portrait
@@ -47,7 +47,7 @@ p4a.extra_args = --cython=3.0.10
 # android.permissions = INTERNET
 
 # Optional: use the latest p4a (can help with compatibility)
-# p4a.branch = develop
+p4a.branch = develop
 
 [app:python]
 # Optional Python build flags (usually not needed)
