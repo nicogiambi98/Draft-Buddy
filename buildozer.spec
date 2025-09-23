@@ -12,7 +12,7 @@ source.include_exts = py,kv,png,jpg,jpeg,svg,db,wav,ogg,mp3,txt,json
 source.include_patterns = assets/*, events.db
 
 # Core requirements (SQLite is needed at runtime)
-requirements = python3,kivy,sqlite3
+requirements = python3,kivy,sqlite3,pyjnius==1.6.1
 
 # UI settings
 orientation = portrait
@@ -33,20 +33,15 @@ log_level = 2
 warn_on_root = 1
 
 [app:android]
-# Target and min API
 android.api = 31
 android.minapi = 21
-
-# Build a single architecture first (faster and simpler)
 android.archs = arm64-v8a
-
-# NDK API level used by recipes
 p4a.ndk_api = 21
 
-# Pin Cython used by p4a recipes (fixes pyjnius build with Cython 3)
-p4a.cython = 0.29.36
-# Extra arg to ensure the pin is applied across build chains
-p4a.extra_args = --cython=0.29.36
+
+# Ensure Cython 3 is used consistently (works with pyjnius >= 1.6.1)
+p4a.cython = 3.0.10
+p4a.extra_args = --cython=3.0.10
 
 # If you need internet or other permissions, add here (not needed for internal DB)
 # android.permissions = INTERNET
