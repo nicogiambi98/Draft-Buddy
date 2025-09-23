@@ -1,5 +1,13 @@
 #:import dp kivy.metrics.dp
 
+<Button>:
+    # Make all button texts responsive and well-aligned
+    text_size: self.size
+    halign: 'center'
+    valign: 'middle'
+    padding: [dp(4), dp(4)]
+    font_size: self.height * 0.4
+
 <PlayersScreen>:
     BoxLayout:
         orientation: "vertical"
