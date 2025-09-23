@@ -19,6 +19,8 @@ log_level = 2
 
 # Kivy bootstrap (default)
 p4a.bootstrap = sdl2
+# Pin Cython used by python-for-android to a 0.29.x release
+p4a.cython = 0.29.36
 
 # If your app needs internet, you can add permissions here (none needed for internal DB)
 # android.permissions = INTERNET
