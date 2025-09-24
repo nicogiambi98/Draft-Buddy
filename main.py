@@ -449,6 +449,8 @@ class MatchRow(BoxLayout):
 
     def cycle_score(self, side):
         # cycles 0 -> 1 -> 2 -> 0 and writes to DB
+        if self.bye:
+            return
         if side == 1:
             self.score1 = (self.score1 + 1) % 3
             DB.execute("UPDATE matches SET score_p1 = ? WHERE id = ?", (self.score1, self.match_id))
@@ -464,6 +466,61 @@ class MatchRow(BoxLayout):
 # ----------------------
 class PlayersScreen(Screen):
     def on_enter(self):
+        self.refresh()
+
+    def open_add_player(self):
+        # Create a lightweight popup to add a new player without leaving the list
+        try:
+            from kivy.uix.textinput import TextInput
+            content = BoxLayout(orientation='vertical', spacing=8, padding=10)
+            ti = TextInput(hint_text='Player name', multiline=False)
+            # Trim leading spaces as user types
+            def _lstrip(_inst, _val):
+                try:
+                    _inst.text = _inst.text.lstrip()
+                except Exception:
+                    pass
+            ti.bind(text=_lstrip)
+            # Buttons row
+            btns = BoxLayout(size_hint_y=None, height=dp(48), spacing=8)
+            btn_save = Button(text='Save')
+            btn_cancel = Button(text='Cancel')
+            btns.add_widget(btn_save)
+            btns.add_widget(btn_cancel)
+            content.add_widget(ti)
+            content.add_widget(btns)
+            pop = Popup(title='Add New Player', content=content, size_hint=(0.9, 0.4))
+            
+            def _submit(*_):
+                self._save_new_player_from_popup(ti.text, pop)
+            
+            btn_save.bind(on_release=_submit)
+            btn_cancel.bind(on_release=lambda *_: pop.dismiss())
+            ti.bind(on_text_validate=_submit)
+            pop.open()
+            # Focus after open
+            Clock.schedule_once(lambda *_: setattr(ti, 'focus', True), 0.05)
+        except Exception:
+            # Fallback: navigate to old screen if popup fails
+            try:
+                self.manager.current = 'newplayer'
+            except Exception:
+                pass
+
+    def _save_new_player_from_popup(self, name, popup):
+        name = (name or '').strip()
+        if not name:
+            try:
+                popup.dismiss()
+            except Exception:
+                pass
+            return
+        DB.execute("INSERT INTO players (name) VALUES (?)", (name,))
+        DB.commit()
+        try:
+            popup.dismiss()
+        except Exception:
+            pass
         self.refresh()
 
     def _add_player_row(self, pid, name):
@@ -542,49 +599,40 @@ class CreateEventScreen(Screen):
         self.update_selected_view()
 
     def refresh_players(self):
-        # Rebuild the selectable players list, preserving selected state and applying filter
+        # Rebuild the selectable players list, applying filter and excluding already selected players
         sel = self.ids.players_select
         sel.clear_widgets()
         try:
             filt = (self.ids.filter_input.text or "").strip().lower()
         except Exception:
             filt = ""
+        if not hasattr(self, 'selected_ids'):
+            self.selected_ids = set()
         cur = DB.execute("SELECT id, name FROM players ORDER BY name")
         rows = cur.fetchall()
         for pid, name in rows:
+            # Skip players already added to the event (they will appear in the Selected list)
+            if pid in self.selected_ids:
+                continue
             if filt and filt not in name.lower():
                 continue
             row = BoxLayout(size_hint_y=None, height=dp(56))
-            # stateful toggle button
-            is_selected = hasattr(self, 'selected_ids') and (pid in self.selected_ids)
-            btn_text = "Remove" if is_selected else "Add"
-            chk = Button(text=btn_text, size_hint_x=None, width=dp(220))
-            # prevent text wrapping/splitting on small buttons
+            lbl = Label(text=name)
+            def add_player(instance, _pid=pid):
+                self.selected_ids.add(_pid)
+                # Rebuild lists so the player disappears here and appears in Selected
+                self.refresh_players()
+                self.update_selected_view()
+            btn = Button(text="Add", size_hint_x=None, width=dp(120))
             try:
-                chk.text_size = (None, None)
-                chk.shorten = True
-                chk.font_size = '18sp'
+                btn.text_size = (None, None)
+                btn.shorten = True
+                btn.font_size = '18sp'
             except Exception:
                 pass
-            lbl = Label(text=name)
-            chk.player_id = pid
-            chk.is_added = is_selected
-
-            def toggle(btn):
-                btn.is_added = not btn.is_added
-                if btn.is_added:
-                    if not hasattr(self, 'selected_ids'):
-                        self.selected_ids = set()
-                    self.selected_ids.add(btn.player_id)
-                else:
-                    if hasattr(self, 'selected_ids') and btn.player_id in self.selected_ids:
-                        self.selected_ids.remove(btn.player_id)
-                btn.text = "Remove" if btn.is_added else "Add"
-                self.update_selected_view()
-
-            chk.bind(on_release=lambda inst: toggle(inst))
+            btn.bind(on_release=add_player)
             row.add_widget(lbl)
-            row.add_widget(chk)
+            row.add_widget(btn)
             sel.add_widget(row)
         # Update the selected list preview
         self.update_selected_view()
@@ -650,14 +698,15 @@ class CreateEventScreen(Screen):
         self.update_selected_view()
 
     def randomize_seating(self):
-        # collect selected players and guests only
+        # collect selected players and guests only (use selected_ids, not UI state)
         chosen = []
-        for row in self.ids.players_select.children:
+        if not hasattr(self, 'selected_ids'):
+            self.selected_ids = set()
+        for pid in self.selected_ids:
             try:
-                btn = row.children[0]
-                if hasattr(btn, "is_added") and btn.is_added:
-                    pname = DB.execute("SELECT name FROM players WHERE id=?", (btn.player_id,)).fetchone()[0]
-                    chosen.append((btn.player_id, pname))
+                row = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                if row:
+                    chosen.append((pid, row[0]))
             except Exception:
                 pass
         # plus any guests explicitly added
@@ -666,11 +715,20 @@ class CreateEventScreen(Screen):
             return
         random.shuffle(chosen)
         self.seating = chosen
-        # write seating preview
-        self.ids.players_select.clear_widgets()
+        # write seating preview into the selected_list area for quick check
+        cont = self.ids.get('seating_list') or self.ids.get('players_select')
+        if cont is None:
+            return
+        try:
+            cont.clear_widgets()
+        except Exception:
+            pass
         for idx, (pid, name) in enumerate(self.seating, start=1):
             display = f"{idx}. {name} (guest)" if pid is None else f"{idx}. {name}"
-            self.ids.players_select.add_widget(Label(text=display, size_hint_y=None, height=28))
+            try:
+                cont.add_widget(Label(text=display, size_hint_y=None, height=28))
+            except Exception:
+                pass
 
     def start_event(self, name, etype, rounds, round_time):
         # collect selected players and guests, then navigate to SeatingScreen
@@ -705,14 +763,24 @@ class EventsListScreen(Screen):
         grid.clear_widgets()
         cur = DB.execute("SELECT id, name, type, status FROM events ORDER BY (status='active') DESC, created_at DESC")
         for eid, name, etype, status in cur.fetchall():
-            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=64)
+            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=dp(68))
             def open_event(inst, _eid=eid, _status=status):
                 if _status == 'closed':
                     self.manager.get_screen('standings').show_for_event(_eid)
                     self.manager.current = 'standings'
                 else:
-                    self.manager.get_screen('event').load_event(_eid)
-                    self.manager.current = 'event'
+                    try:
+                        cur_round = DB.execute("SELECT current_round FROM events WHERE id=?", (_eid,)).fetchone()
+                        cur_round = int(cur_round[0]) if cur_round and cur_round[0] is not None else 0
+                    except Exception:
+                        cur_round = 0
+                    if cur_round == 0:
+                        seat = self.manager.get_screen('seating')
+                        seat.load_existing_event(_eid)
+                        self.manager.current = 'seating'
+                    else:
+                        self.manager.get_screen('event').load_event(_eid)
+                        self.manager.current = 'event'
             btn.bind(on_release=open_event)
             grid.add_widget(btn)
 
@@ -943,6 +1011,7 @@ class SeatingScreen(Screen):
     event_type = StringProperty("draft")
     rounds = NumericProperty(3)
     round_time = NumericProperty(1800)
+    event_id = NumericProperty(0)
 
     def set_data(self, selected_list, name, etype, rounds, round_time):
         # selected_list as list of tuples (player_id or None, display_name)
@@ -957,7 +1026,11 @@ class SeatingScreen(Screen):
             self.round_time = int(round_time)
         except Exception:
             self.round_time = 1800
+        # reset any previous pending event context
+        self.event_id = 0
+        # show an initial random seating and persist the event immediately
         self.randomize()
+        self._create_event_if_needed()
 
     def randomize(self):
         if len(self.selected) < 2:
@@ -969,22 +1042,78 @@ class SeatingScreen(Screen):
         for idx, (pid, name) in enumerate(self.seating, start=1):
             lbl = Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1))
             cont.add_widget(lbl)
+        # If an event is already created and still before Round 1, persist new seating order
+        try:
+            if getattr(self, 'event_id', 0) and DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()[0] == 0:
+                for idx, (pid, name) in enumerate(self.seating):
+                    if pid is None:
+                        DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id IS NULL AND guest_name=?",
+                                   (idx, self.event_id, name))
+                    else:
+                        DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id=?",
+                                   (idx, self.event_id, pid))
+                DB.commit()
+        except Exception:
+            pass
 
-    def confirm_and_begin(self):
+    def _create_event_if_needed(self):
+        if getattr(self, 'event_id', 0):
+            return
+        # Create the event row and event_players from current seating
         cur = DB.cursor()
         cur.execute("INSERT INTO events (name, type, rounds, round_time, status, current_round) VALUES (?, ?, ?, ?, ?, ?)",
                     (self.event_name, self.event_type, int(self.rounds), int(self.round_time), "active", 0))
-        event_id = cur.lastrowid
+        self.event_id = cur.lastrowid
         for idx, (pid, name) in enumerate(self.seating):
             if pid is None:
                 cur.execute("INSERT INTO event_players (event_id, player_id, guest_name, seating_pos) VALUES (?, ?, ?, ?)",
-                            (event_id, None, name, idx))
+                            (self.event_id, None, name, idx))
             else:
                 cur.execute("INSERT INTO event_players (event_id, player_id, guest_name, seating_pos) VALUES (?, ?, ?, ?)",
-                            (event_id, pid, None, idx))
+                            (self.event_id, pid, None, idx))
         DB.commit()
-        generate_round_one(event_id)
-        self.manager.get_screen("event").load_event(event_id)
+
+    def load_existing_event(self, event_id):
+        # Load an existing not-started event into the seating screen
+        self.event_id = int(event_id)
+        row = DB.execute("SELECT name, type, rounds, round_time, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+        if not row:
+            return
+        name, etype, rounds, rtime, cur_round = row
+        self.event_name = name
+        self.event_type = etype
+        self.rounds = int(rounds or 3)
+        self.round_time = int(rtime or 1800)
+        # Load seating by seating_pos
+        people = DB.execute("SELECT player_id, guest_name FROM event_players WHERE event_id=? ORDER BY seating_pos ASC", (self.event_id,)).fetchall()
+        self.selected = []
+        self.seating = []
+        for pid, gname in people:
+            if pid is None:
+                self.selected.append((None, gname))
+                self.seating.append((None, gname))
+            else:
+                pname = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                pname = pname[0] if pname else f"Player {pid}"
+                self.selected.append((pid, pname))
+                self.seating.append((pid, pname))
+        # Render list
+        cont = self.ids.seating_list
+        cont.clear_widgets()
+        for idx, (pid, name) in enumerate(self.seating, start=1):
+            cont.add_widget(Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1)))
+
+    def confirm_and_begin(self):
+        # If event already exists (created when arriving to seating), just generate round one and go
+        if getattr(self, 'event_id', 0):
+            generate_round_one(self.event_id)
+            self.manager.get_screen("event").load_event(self.event_id)
+            self.manager.current = "event"
+            return
+        # Fallback: create event now (should be rare)
+        self._create_event_if_needed()
+        generate_round_one(self.event_id)
+        self.manager.get_screen("event").load_event(self.event_id)
         self.manager.current = "event"
 
 
@@ -1003,7 +1132,8 @@ class StandingsScreen(Screen):
         grid.clear_widgets()
         standings = compute_standings(self.event_id)
         # Define column size hints (sum doesn't have to be 1 for GridLayout)
-        col_sizes = [0.6, 3.0, 0.8, 1.2, 1.0, 1.0, 1.0]
+        # Tighten MP and W-L-D a bit to free room for percentage headers
+        col_sizes = [0.6, 3.0, 0.6, 1.0, 1.1, 1.1, 1.1]
 
         def add_cell(text, bold=False, halign='center', size_hint_x=1.0):
             lbl = Label(text=(f"[b]{text}[/b]" if bold else text),
@@ -1024,6 +1154,8 @@ class StandingsScreen(Screen):
             add_cell(h, bold=True, halign=('left' if h == 'Name' else 'center'), size_hint_x=col_sizes[i])
 
         # Data rows
+        from kivy.uix.scrollview import ScrollView
+        from kivy.metrics import dp
         for rank, st in enumerate(standings, start=1):
             name = st['name']
             mp = st['mp']
@@ -1036,8 +1168,35 @@ class StandingsScreen(Screen):
 
             row_values = [str(rank), name, str(mp), f"{w}-{l}-{d}", omwp, gwp, ogwp]
             for i, val in enumerate(row_values):
-                hal = 'left' if i == 1 else 'center'
-                add_cell(val, bold=False, halign=hal, size_hint_x=col_sizes[i])
+                if i == 1:
+                    # Name column: make it horizontally scrollable if too long
+                    sv = ScrollView(size_hint_y=None,
+                                    height=28,
+                                    do_scroll_x=True,
+                                    do_scroll_y=False,
+                                    bar_width=0)
+                    # Hard-disable any vertical scrolling/bounce on some devices
+                    sv.effect_y = None
+                    sv.scroll_wheel_distance = 0
+                    sv.scroll_y = 1
+                    sv.size_hint_x = col_sizes[i]
+                    name_lbl = Label(text=val,
+                                     markup=True,
+                                     size_hint_y=None,
+                                     height=28,
+                                     color=(1,1,1,1),
+                                     halign='left',
+                                     valign='middle',
+                                     size_hint_x=None)
+                    # Do not wrap; size to texture for horizontal scrolling
+                    name_lbl.bind(texture_size=lambda inst, val: setattr(inst, 'width', val[0] + dp(4)))
+                    # Align text vertically
+                    name_lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (None, None)))
+                    sv.add_widget(name_lbl)
+                    grid.add_widget(sv)
+                else:
+                    hal = 'center'
+                    add_cell(val, bold=False, halign=hal, size_hint_x=col_sizes[i])
 
 
 class LeagueScreen(Screen):
