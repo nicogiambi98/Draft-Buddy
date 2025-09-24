@@ -23,6 +23,7 @@ from pairing import get_name_for_event_player, compute_standings, generate_round
 from timer import DraftTimer
 from kivy.core.window import Window
 from kivy.utils import platform
+from kivy.metrics import dp
 
 # Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
 # Only apply on desktop platforms to avoid interfering with mobile builds
@@ -466,12 +467,13 @@ class PlayersScreen(Screen):
         self.refresh()
 
     def _add_player_row(self, pid, name):
-        row = BoxLayout(size_hint_y=None, height=36)
+        row = BoxLayout(size_hint_y=None, height=dp(56))
         lbl = Label(text=f"{name} (id:{pid})", color=(1,1,1,1))
-        btn_del = Button(text="Delete", size_hint_x=None, width=120)
+        btn_del = Button(text="Delete", size_hint_x=None, width=dp(200))
         try:
             btn_del.text_size = (None, None)
             btn_del.shorten = True
+            btn_del.font_size = '18sp'
         except Exception:
             pass
         btn_del.bind(on_release=lambda inst, _pid=pid, _name=name: self.delete_player(_pid, _name))
@@ -552,15 +554,16 @@ class CreateEventScreen(Screen):
         for pid, name in rows:
             if filt and filt not in name.lower():
                 continue
-            row = BoxLayout(size_hint_y=None, height=36)
+            row = BoxLayout(size_hint_y=None, height=dp(56))
             # stateful toggle button
             is_selected = hasattr(self, 'selected_ids') and (pid in self.selected_ids)
             btn_text = "Remove" if is_selected else "Add"
-            chk = Button(text=btn_text, size_hint_x=None, width=110)
+            chk = Button(text=btn_text, size_hint_x=None, width=dp(220))
             # prevent text wrapping/splitting on small buttons
             try:
                 chk.text_size = (None, None)
                 chk.shorten = True
+                chk.font_size = '18sp'
             except Exception:
                 pass
             lbl = Label(text=name)
@@ -604,9 +607,9 @@ class CreateEventScreen(Screen):
                     name = name[0] if name else f"Player {pid}"
                 except Exception:
                     name = f"Player {pid}"
-                row = BoxLayout(size_hint_y=None, height=36)
+                row = BoxLayout(size_hint_y=None, height=dp(56))
                 row.add_widget(Label(text=f"• {name}"))
-                btn = Button(text="X", size_hint_x=None, width=40, font_size='18sp')
+                btn = Button(text="X", size_hint_x=None, width=dp(56), font_size='22sp')
                 def remove_player(instance, pid_to_remove=pid):
                     if hasattr(self, 'selected_ids') and pid_to_remove in self.selected_ids:
                         self.selected_ids.remove(pid_to_remove)
@@ -619,9 +622,9 @@ class CreateEventScreen(Screen):
         # Guests (keep index for precise removal)
         for idx, (pid, gname) in enumerate(list(self.guest_list)):
             if pid is None:
-                row = BoxLayout(size_hint_y=None, height=36)
+                row = BoxLayout(size_hint_y=None, height=dp(56))
                 row.add_widget(Label(text=f"• {gname} (guest)"))
-                gbtn = Button(text="X", size_hint_x=None, width=40, font_size='18sp')
+                gbtn = Button(text="X", size_hint_x=None, width=dp(56), font_size='22sp')
                 def remove_guest(instance, guest_index=idx):
                     try:
                         if 0 <= guest_index < len(self.guest_list):
@@ -1058,11 +1061,9 @@ class DraftTimerScreen(Screen):
             cont.add_widget(self._timer_widget)
 
     def on_leave(self):
-        if hasattr(self, '_timer_widget') and hasattr(self._timer_widget, 'pause_timer'):
-            try:
-                self._timer_widget.pause_timer(None)
-            except Exception:
-                pass
+        # Do not auto-pause when leaving the screen; allow timer to continue running in background
+        # This ensures switching pages does not stop the draft timer.
+        return
 
 
 # ----------------------

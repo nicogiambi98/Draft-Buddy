@@ -17,6 +17,7 @@ class DraftTimer(BoxLayout):
         self.current_round = 0
         self.pick_index = 0
         self.paused = False
+        self.paused_remaining = None  # stores remaining seconds when user pauses
 
         # Phase timing (wall-clock based)
         self.phase_start_ts = 0  # epoch seconds when current phase started
@@ -75,11 +76,12 @@ class DraftTimer(BoxLayout):
         if self.timer_event:
             return
         if self.current_round > 0 and self.paused and self.phase_duration > 0:
-            # Resume current phase
+            # Resume current phase from the exact paused remaining value
+            remaining = self.paused_remaining if self.paused_remaining is not None else self.get_remaining()
             self.paused = False
+            self.paused_remaining = None
             # Re-anchor start time so remaining stays the same
-            remaining = self.get_remaining()
-            self.phase_start_ts = time.time() - (self.phase_duration - remaining)
+            self.phase_start_ts = time.time() - (self.phase_duration - int(remaining))
             self.timer_event = Clock.schedule_interval(self.update, 1)
             self.update(0)
             return
@@ -87,6 +89,7 @@ class DraftTimer(BoxLayout):
         self.current_round = 1
         self.pick_index = 0
         self.paused = False
+        self.paused_remaining = None
         self.start_next_timer()
 
     def start_next_timer(self, dt=None):
@@ -117,6 +120,9 @@ class DraftTimer(BoxLayout):
                 self.label.text = "Draft Finished!"
 
     def get_remaining(self):
+        # If user manually paused, freeze the remaining time regardless of wall-clock
+        if self.paused and self.paused_remaining is not None:
+            return int(self.paused_remaining)
         if self.phase_duration <= 0 or self.phase_start_ts <= 0:
             return 0
         remaining = int(self.phase_duration - (time.time() - self.phase_start_ts))
@@ -169,17 +175,20 @@ class DraftTimer(BoxLayout):
                 sound.play()
 
     def pause_timer(self, instance):
-        # User-initiated pause
+        # User-initiated pause: freeze remaining time exactly as seen
+        self.paused_remaining = self.get_remaining()
         self.paused = True
         self._cancel_schedule()
 
     def reset_all(self, instance):
-        self.pause_timer(None)
+        # Full reset of the timer state
+        self._cancel_schedule()
         self.label.text = "Ready"
         self.time_left = 0
         self.pick_index = 0
         self.current_round = 0
         self.paused = False
+        self.paused_remaining = None
         self.phase_start_ts = 0
         self.phase_duration = 0
 

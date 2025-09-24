@@ -30,7 +30,8 @@
             TextInput:
                 id: filter_input
                 hint_text: "Filter..."
-                on_text: root.filter_players(self.text)
+                multiline: False
+                on_text: self.text = self.text.lstrip(); root.filter_players(self.text)
 
         ScrollView:
             GridLayout:
@@ -39,7 +40,7 @@
                 size_hint_y: None
                 height: self.minimum_height
                 spacing: dp(6)
-                row_default_height: dp(36)
+                row_default_height: dp(56)
 
         BoxLayout:
             size_hint_y: None
@@ -125,7 +126,8 @@
             TextInput:
                 id: filter_input
                 hint_text: "Filter players..."
-                on_text: root.filter_players(self.text)
+                multiline: False
+                on_text: self.text = self.text.lstrip(); root.filter_players(self.text)
         Label:
             text: "Select players (or add guests)"
             size_hint_y: None
@@ -137,7 +139,7 @@
                 size_hint_y: None
                 height: self.minimum_height
                 spacing: dp(6)
-                row_default_height: dp(36)
+                row_default_height: dp(56)
         BoxLayout:
             size_hint_y: None
             height: dp(56)
@@ -160,7 +162,7 @@
                 size_hint_y: None
                 height: self.minimum_height
                 spacing: dp(2)
-                row_default_height: dp(36)
+                row_default_height: dp(56)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
