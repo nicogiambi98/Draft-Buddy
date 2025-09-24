@@ -6,6 +6,7 @@ from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
 from kivy.core.audio import SoundLoader
 import random
+import time
 
 class DraftTimer(BoxLayout):
     def __init__(self, **kwargs):
@@ -15,6 +16,11 @@ class DraftTimer(BoxLayout):
         self.mode = "Expert"
         self.current_round = 0
         self.pick_index = 0
+        self.paused = False
+
+        # Phase timing (wall-clock based)
+        self.phase_start_ts = 0  # epoch seconds when current phase started
+        self.phase_duration = 0  # seconds allocated to current phase
 
         # Load sounds
         self.animal_sounds = [
@@ -41,10 +47,10 @@ class DraftTimer(BoxLayout):
         self.add_widget(self.spinner)
 
         btn_layout = BoxLayout(size_hint=(1, 0.3))
-        # Use icon-like glyphs for clarity on large buttons
-        start_btn = Button(text="\u25B6", font_size='64sp', on_press=self.start_sequence)  # ▶
-        pause_btn = Button(text="\u23F8", font_size='64sp', on_press=self.pause_timer)     # ⏸
-        reset_btn = Button(text="\u21BB", font_size='64sp', on_press=self.reset_all)       # ↻
+        # Use ASCII-safe labels to ensure cross-platform support
+        start_btn = Button(text=">", font_size='64sp', on_press=self.start_sequence)   # Play
+        pause_btn = Button(text="||", font_size='64sp', on_press=self.pause_timer)     # Pause
+        reset_btn = Button(text="R", font_size='64sp', on_press=self.reset_all)        # Reset
         for b in [start_btn, pause_btn, reset_btn]:
             btn_layout.add_widget(b)
         self.add_widget(btn_layout)
@@ -65,26 +71,42 @@ class DraftTimer(BoxLayout):
         }
 
     def start_sequence(self, instance):
+        # Start or resume sequence
         if self.timer_event:
             return
+        if self.current_round > 0 and self.paused and self.phase_duration > 0:
+            # Resume current phase
+            self.paused = False
+            # Re-anchor start time so remaining stays the same
+            remaining = self.get_remaining()
+            self.phase_start_ts = time.time() - (self.phase_duration - remaining)
+            self.timer_event = Clock.schedule_interval(self.update, 1)
+            self.update(0)
+            return
+        # Fresh start
         self.current_round = 1
         self.pick_index = 0
+        self.paused = False
         self.start_next_timer()
 
     def start_next_timer(self, dt=None):
         seq = self.sequences[self.mode]
         if self.pick_index < len(seq):
             # Pick timer
-            self.time_left = seq[self.pick_index]
+            self.phase_duration = int(seq[self.pick_index])
+            self.phase_start_ts = time.time()
             self.pick_index += 1
-            self.label.text = f"Pick {self.pick_index} - {self.time_left}s"
+            self.label.text = f"Pick {self.pick_index} - {self.phase_duration}s"
             self.timer_event = Clock.schedule_interval(self.update, 1)
+            self.update(0)
         elif self.pick_index == len(seq):
             # 1-minute build phase
-            self.time_left = 60
+            self.phase_duration = 60
+            self.phase_start_ts = time.time()
             self.pick_index += 1
-            self.label.text = f"Build Phase - {self.time_left}s"
+            self.label.text = f"Build Phase - {self.phase_duration}s"
             self.timer_event = Clock.schedule_interval(self.update, 1)
+            self.update(0)
         else:
             # Repeat sequence if rounds remain
             if self.current_round < 3:
@@ -94,17 +116,51 @@ class DraftTimer(BoxLayout):
             else:
                 self.label.text = "Draft Finished!"
 
+    def get_remaining(self):
+        if self.phase_duration <= 0 or self.phase_start_ts <= 0:
+            return 0
+        remaining = int(self.phase_duration - (time.time() - self.phase_start_ts))
+        return remaining
+
+    def _phase_title(self):
+        seq_len = len(self.sequences[self.mode])
+        if self.pick_index == 0:
+            return "Pick 1"
+        if self.pick_index <= seq_len:
+            return f"Pick {self.pick_index}"
+        elif self.pick_index == seq_len + 1:
+            return "Build Phase"
+        return ""
+
+    def _cancel_schedule(self):
+        if self.timer_event:
+            try:
+                self.timer_event.cancel()
+            except Exception:
+                pass
+            self.timer_event = None
+
+    def on_app_resume(self):
+        # If not paused and a phase was running, reschedule updates
+        if self.current_round > 0 and not self.paused and self.phase_duration > 0 and self.timer_event is None:
+            self.timer_event = Clock.schedule_interval(self.update, 1)
+            self.update(0)
+
     def update(self, dt):
-        if self.time_left > 0:
-            # Tick for last 3 seconds
-            if self.time_left <= 3 and self.tick_sound:
+        remaining = self.get_remaining()
+        # Tick for last 3 seconds
+        if remaining in (1, 2, 3) and self.tick_sound:
+            try:
                 self.tick_sound.play()
-            self.time_left -= 1
-            self.label.text = self.label.text.split("-")[0] + f"- {self.time_left}s"
-        else:
-            self.pause_timer(None)
-            self.play_animal_sound()
-            Clock.schedule_once(self.start_next_timer, 2)  # 2-second break
+            except Exception:
+                pass
+        if remaining > 0:
+            self.label.text = f"{self._phase_title()} - {remaining}s"
+            return
+        # Phase complete
+        self._cancel_schedule()
+        self.play_animal_sound()
+        Clock.schedule_once(self.start_next_timer, 2)  # 2-second break
 
     def play_animal_sound(self):
         if self.animal_sounds:
@@ -113,9 +169,9 @@ class DraftTimer(BoxLayout):
                 sound.play()
 
     def pause_timer(self, instance):
-        if self.timer_event:
-            self.timer_event.cancel()
-            self.timer_event = None
+        # User-initiated pause
+        self.paused = True
+        self._cancel_schedule()
 
     def reset_all(self, instance):
         self.pause_timer(None)
@@ -123,6 +179,9 @@ class DraftTimer(BoxLayout):
         self.time_left = 0
         self.pick_index = 0
         self.current_round = 0
+        self.paused = False
+        self.phase_start_ts = 0
+        self.phase_duration = 0
 
 class DraftTimerApp(App):
     def build(self):

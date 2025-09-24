@@ -468,7 +468,12 @@ class PlayersScreen(Screen):
     def _add_player_row(self, pid, name):
         row = BoxLayout(size_hint_y=None, height=36)
         lbl = Label(text=f"{name} (id:{pid})", color=(1,1,1,1))
-        btn_del = Button(text="Delete", size_hint_x=None, width=80)
+        btn_del = Button(text="Delete", size_hint_x=None, width=120)
+        try:
+            btn_del.text_size = (None, None)
+            btn_del.shorten = True
+        except Exception:
+            pass
         btn_del.bind(on_release=lambda inst, _pid=pid, _name=name: self.delete_player(_pid, _name))
         row.add_widget(lbl)
         row.add_widget(btn_del)
@@ -599,9 +604,9 @@ class CreateEventScreen(Screen):
                     name = name[0] if name else f"Player {pid}"
                 except Exception:
                     name = f"Player {pid}"
-                row = BoxLayout(size_hint_y=None, height=24)
+                row = BoxLayout(size_hint_y=None, height=36)
                 row.add_widget(Label(text=f"• {name}"))
-                btn = Button(text="✕", size_hint_x=None, width=28)
+                btn = Button(text="X", size_hint_x=None, width=40, font_size='18sp')
                 def remove_player(instance, pid_to_remove=pid):
                     if hasattr(self, 'selected_ids') and pid_to_remove in self.selected_ids:
                         self.selected_ids.remove(pid_to_remove)
@@ -614,9 +619,9 @@ class CreateEventScreen(Screen):
         # Guests (keep index for precise removal)
         for idx, (pid, gname) in enumerate(list(self.guest_list)):
             if pid is None:
-                row = BoxLayout(size_hint_y=None, height=24)
+                row = BoxLayout(size_hint_y=None, height=36)
                 row.add_widget(Label(text=f"• {gname} (guest)"))
-                gbtn = Button(text="✕", size_hint_x=None, width=28)
+                gbtn = Button(text="X", size_hint_x=None, width=40, font_size='18sp')
                 def remove_guest(instance, guest_index=idx):
                     try:
                         if 0 <= guest_index < len(self.guest_list):
@@ -697,7 +702,7 @@ class EventsListScreen(Screen):
         grid.clear_widgets()
         cur = DB.execute("SELECT id, name, type, status FROM events ORDER BY (status='active') DESC, created_at DESC")
         for eid, name, etype, status in cur.fetchall():
-            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=44)
+            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=64)
             def open_event(inst, _eid=eid, _status=status):
                 if _status == 'closed':
                     self.manager.get_screen('standings').show_for_event(_eid)
@@ -1082,6 +1087,39 @@ class EventsApp(App):
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
         return sm
+
+    def on_pause(self):
+        # Android: app is going to background; keep state, pause schedules if needed
+        try:
+            # Pause DraftTimer updates if present to save CPU (state is wall-clock based)
+            scr = self.root.get_screen("drafttimer")
+            if hasattr(scr, "_timer_widget") and hasattr(scr._timer_widget, "_cancel_schedule"):
+                scr._timer_widget._cancel_schedule()
+        except Exception:
+            pass
+        # Return True to allow pause on Android
+        return True
+
+    def on_resume(self):
+        # Resync timers when app returns to foreground
+        try:
+            current = self.root.current
+        except Exception:
+            current = None
+        # Event round timer: recompute remaining and reschedule
+        try:
+            if current == "event":
+                self.root.get_screen("event").maybe_start_timer()
+        except Exception:
+            pass
+        # DraftTimer: reschedule updates using wall-clock remaining
+        try:
+            if current == "drafttimer":
+                scr = self.root.get_screen("drafttimer")
+                if hasattr(scr, "_timer_widget") and hasattr(scr._timer_widget, "on_app_resume"):
+                    scr._timer_widget.on_app_resume()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     EventsApp().run()
