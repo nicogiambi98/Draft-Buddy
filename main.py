@@ -21,6 +21,25 @@ from kivy.clock import Clock
 from kivy.core.audio import SoundLoader
 from pairing import get_name_for_event_player, compute_standings, generate_round_one, compute_next_round_pairings
 from timer import DraftTimer
+from kivy.core.window import Window
+from kivy.utils import platform
+
+# Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
+# Only apply on desktop platforms to avoid interfering with mobile builds
+if platform in ("win", "linux", "macosx"):
+    try:
+        base_height = 1000  # arbitrary portrait height
+        base_width = int(base_height * 9 / 20)
+        Window.size = (base_width, base_height)
+        # Optionally position the window nicely
+        try:
+            Window.top = 50
+            Window.left = 50
+        except Exception:
+            pass
+    except Exception:
+        # Silently ignore if Window is not available or setting size fails
+        pass
 
 DB_FILE = "events.db"
 
@@ -504,31 +523,111 @@ class CreateEventScreen(Screen):
     seating = ListProperty([])  # deprecated for seating preview
     guest_list = ListProperty([])  # list of (None, guest_name)
     def on_enter(self):
-        # reset guest list and refresh UI
+        # reset lists and refresh UI
         self.guest_list = []
+        self.selected_ids = set()
+        # clear filter if present
+        try:
+            self.ids.filter_input.text = ""
+        except Exception:
+            pass
         self.refresh_players()
+        self.update_selected_view()
 
     def refresh_players(self):
+        # Rebuild the selectable players list, preserving selected state and applying filter
         sel = self.ids.players_select
         sel.clear_widgets()
+        try:
+            filt = (self.ids.filter_input.text or "").strip().lower()
+        except Exception:
+            filt = ""
         cur = DB.execute("SELECT id, name FROM players ORDER BY name")
-        for pid, name in cur.fetchall():
+        rows = cur.fetchall()
+        for pid, name in rows:
+            if filt and filt not in name.lower():
+                continue
             row = BoxLayout(size_hint_y=None, height=36)
-            chk = Button(text="Add", size_hint_x=None, width=80)
+            # stateful toggle button
+            is_selected = hasattr(self, 'selected_ids') and (pid in self.selected_ids)
+            btn_text = "Remove" if is_selected else "Add"
+            chk = Button(text=btn_text, size_hint_x=None, width=110)
+            # prevent text wrapping/splitting on small buttons
+            try:
+                chk.text_size = (None, None)
+                chk.shorten = True
+            except Exception:
+                pass
             lbl = Label(text=name)
-            # toggle behavior via userdata in button:
-            chk.is_added = False
             chk.player_id = pid
+            chk.is_added = is_selected
+
             def toggle(btn):
                 btn.is_added = not btn.is_added
+                if btn.is_added:
+                    if not hasattr(self, 'selected_ids'):
+                        self.selected_ids = set()
+                    self.selected_ids.add(btn.player_id)
+                else:
+                    if hasattr(self, 'selected_ids') and btn.player_id in self.selected_ids:
+                        self.selected_ids.remove(btn.player_id)
                 btn.text = "Remove" if btn.is_added else "Add"
+                self.update_selected_view()
+
             chk.bind(on_release=lambda inst: toggle(inst))
             row.add_widget(lbl)
             row.add_widget(chk)
             sel.add_widget(row)
-        # also show current seating
-        self.ids.players_select.add_widget(Label(text="--- Guests below ---", size_hint_y=None, height=24))
-        for _ in range(0): pass
+        # Update the selected list preview
+        self.update_selected_view()
+
+    def filter_players(self, text):
+        # Rebuild list based on filter text
+        self.refresh_players()
+
+    def update_selected_view(self):
+        # Populate the selected players/guests list
+        cont = self.ids.get('selected_list')
+        if not cont:
+            return
+        cont.clear_widgets()
+        # Players (selected_ids)
+        if hasattr(self, 'selected_ids') and self.selected_ids:
+            for pid in sorted(self.selected_ids, key=lambda x: x):
+                try:
+                    name = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                    name = name[0] if name else f"Player {pid}"
+                except Exception:
+                    name = f"Player {pid}"
+                row = BoxLayout(size_hint_y=None, height=24)
+                row.add_widget(Label(text=f"• {name}"))
+                btn = Button(text="✕", size_hint_x=None, width=28)
+                def remove_player(instance, pid_to_remove=pid):
+                    if hasattr(self, 'selected_ids') and pid_to_remove in self.selected_ids:
+                        self.selected_ids.remove(pid_to_remove)
+                    # rebuild lists to reflect change
+                    self.refresh_players()
+                    self.update_selected_view()
+                btn.bind(on_release=remove_player)
+                row.add_widget(btn)
+                cont.add_widget(row)
+        # Guests (keep index for precise removal)
+        for idx, (pid, gname) in enumerate(list(self.guest_list)):
+            if pid is None:
+                row = BoxLayout(size_hint_y=None, height=24)
+                row.add_widget(Label(text=f"• {gname} (guest)"))
+                gbtn = Button(text="✕", size_hint_x=None, width=28)
+                def remove_guest(instance, guest_index=idx):
+                    try:
+                        if 0 <= guest_index < len(self.guest_list):
+                            self.guest_list.pop(guest_index)
+                    except Exception:
+                        pass
+                    self.refresh_players()
+                    self.update_selected_view()
+                gbtn.bind(on_release=remove_guest)
+                row.add_widget(gbtn)
+                cont.add_widget(row)
 
     def add_guest(self, guest_name):
         if not guest_name:
@@ -539,8 +638,8 @@ class CreateEventScreen(Screen):
             return
         self.guest_list.append((None, name))
         self.ids.guest_name.text = ""
-        # reflect in list
-        self.ids.players_select.add_widget(Label(text=f"Guest: {name}", size_hint_y=None, height=24))
+        # update selected preview
+        self.update_selected_view()
 
     def randomize_seating(self):
         # collect selected players and guests only
@@ -568,14 +667,14 @@ class CreateEventScreen(Screen):
     def start_event(self, name, etype, rounds, round_time):
         # collect selected players and guests, then navigate to SeatingScreen
         chosen = []
-        for row in self.ids.players_select.children:
-            try:
-                btn = row.children[0]
-                if hasattr(btn, "is_added") and btn.is_added:
-                    pname = DB.execute("SELECT name FROM players WHERE id=?", (btn.player_id,)).fetchone()[0]
-                    chosen.append((btn.player_id, pname))
-            except Exception:
-                pass
+        # Build from selected_ids to avoid dependence on filter/UI list
+        if not hasattr(self, 'selected_ids'):
+            self.selected_ids = set()
+        for pid in self.selected_ids:
+            row = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+            if row:
+                chosen.append((pid, row[0]))
+        # plus any guests explicitly added
         chosen.extend(self.guest_list)
         if len(chosen) < 2:
             return
@@ -895,9 +994,28 @@ class StandingsScreen(Screen):
         grid = self.ids.standings_grid
         grid.clear_widgets()
         standings = compute_standings(self.event_id)
-        # Header
-        header = Label(text="#  Name — MP  (W-L-D)  OMW%  GW%  OGW%", size_hint_y=None, height=28, color=(1,1,1,1))
-        grid.add_widget(header)
+        # Define column size hints (sum doesn't have to be 1 for GridLayout)
+        col_sizes = [0.6, 3.0, 0.8, 1.2, 1.0, 1.0, 1.0]
+
+        def add_cell(text, bold=False, halign='center', size_hint_x=1.0):
+            lbl = Label(text=(f"[b]{text}[/b]" if bold else text),
+                        markup=True,
+                        size_hint_y=None,
+                        height=28,
+                        color=(1,1,1,1),
+                        halign=halign,
+                        valign='middle')
+            # Ensure halign takes effect
+            lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+            lbl.size_hint_x = size_hint_x
+            grid.add_widget(lbl)
+
+        # Header row (7 columns)
+        headers = ['#', 'Name', 'MP', 'W-L-D', 'OMW%', 'GW%', 'OGW%']
+        for i, h in enumerate(headers):
+            add_cell(h, bold=True, halign=('left' if h == 'Name' else 'center'), size_hint_x=col_sizes[i])
+
+        # Data rows
         for rank, st in enumerate(standings, start=1):
             name = st['name']
             mp = st['mp']
@@ -907,8 +1025,11 @@ class StandingsScreen(Screen):
             omwp = f"{st['omwp']:.2f}"
             gwp = f"{st['gwp']:.2f}"
             ogwp = f"{st['ogwp']:.2f}"
-            lbl = Label(text=f"{rank}. {name} — {mp}  ({w}-{l}-{d})  {omwp}  {gwp}  {ogwp}", size_hint_y=None, height=28, color=(1,1,1,1))
-            grid.add_widget(lbl)
+
+            row_values = [str(rank), name, str(mp), f"{w}-{l}-{d}", omwp, gwp, ogwp]
+            for i, val in enumerate(row_values):
+                hal = 'left' if i == 1 else 'center'
+                add_cell(val, bold=False, halign=hal, size_hint_x=col_sizes[i])
 
 
 class LeagueScreen(Screen):

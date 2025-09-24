@@ -41,9 +41,10 @@ class DraftTimer(BoxLayout):
         self.add_widget(self.spinner)
 
         btn_layout = BoxLayout(size_hint=(1, 0.3))
-        start_btn = Button(text="Start", on_press=self.start_sequence)
-        pause_btn = Button(text="Pause", on_press=self.pause_timer)
-        reset_btn = Button(text="Reset", on_press=self.reset_all)
+        # Use icon-like glyphs for clarity on large buttons
+        start_btn = Button(text="\u25B6", font_size='64sp', on_press=self.start_sequence)  # ▶
+        pause_btn = Button(text="\u23F8", font_size='64sp', on_press=self.pause_timer)     # ⏸
+        reset_btn = Button(text="\u21BB", font_size='64sp', on_press=self.reset_all)       # ↻
         for b in [start_btn, pause_btn, reset_btn]:
             btn_layout.add_widget(b)
         self.add_widget(btn_layout)

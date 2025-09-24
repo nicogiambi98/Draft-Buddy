@@ -1,12 +1,11 @@
 #:import dp kivy.metrics.dp
 
 <Button>:
-    # Make all button texts responsive and well-aligned
+    # Make all button texts centered and consistent
     text_size: self.size
     halign: 'center'
     valign: 'middle'
     padding: [dp(4), dp(4)]
-    font_size: self.height * 0.4
 
 <PlayersScreen>:
     BoxLayout:
@@ -92,6 +91,8 @@
         Label:
             markup: True
             text: "[b]Create Event[/b]"
+            size_hint_y: None
+            height: dp(32)
         BoxLayout:
             size_hint_y: None
             height: dp(36)
@@ -118,6 +119,13 @@
                 hint_text: "Round time (min)"
                 multiline: False
                 input_filter: "int"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(36)
+            TextInput:
+                id: filter_input
+                hint_text: "Filter players..."
+                on_text: root.filter_players(self.text)
         Label:
             text: "Select players (or add guests)"
             size_hint_y: None
@@ -141,6 +149,18 @@
                 text: "Add guest to list"
                 on_release:
                     root.add_guest(guest_name.text)
+        Label:
+            text: "Selected players:"
+            size_hint_y: None
+            height: dp(24)
+        ScrollView:
+            GridLayout:
+                id: selected_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(2)
+                row_default_height: dp(24)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
@@ -160,6 +180,8 @@
         Label:
             markup: True
             text: "[b]Events[/b]"
+            size_hint_y: None
+            height: dp(32)
         BoxLayout:
             size_hint_y: None
             height: dp(40)
@@ -170,6 +192,12 @@
                 on_release: root.manager.current = "createevent"
             Widget:
         ScrollView:
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 1
+                Line:
+                    rectangle: (self.x, self.y, self.width, self.height)
+                    width: 1.2
             GridLayout:
                 id: events_grid
                 cols: 1
@@ -359,7 +387,7 @@
         ScrollView:
             GridLayout:
                 id: standings_grid
-                cols: 1
+                cols: 7
                 size_hint_y: None
                 height: self.minimum_height
                 spacing: dp(4)
