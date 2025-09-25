@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 
 from kivy.app import App
-from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition
+from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
 from kivy.lang import Builder
 from kivy.properties import StringProperty, ListProperty, NumericProperty
 from kivy.uix.boxlayout import BoxLayout
@@ -24,6 +24,7 @@ from timer import DraftTimer
 from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.metrics import dp
+from kivy.uix.scrollview import ScrollView
 
 # Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
 # Only apply on desktop platforms to avoid interfering with mobile builds
@@ -1439,6 +1440,109 @@ class BingoScreen(Screen):
     pass
 
 
+class LifeTrackerScreen(Screen):
+    pass
+
+
+class BottomNav(BoxLayout):
+    def on_kv_post(self, base_widget):
+        # After kv is applied and sizes are known, center on current tab
+        Clock.schedule_once(lambda dt: self.center_on(getattr(App.get_running_app().root.ids.sm, 'current', 'players')), 0)
+
+    def _buttons_per_group(self):
+        return 6  # players, events, league, bingo, drafttimer, lifetracker
+
+    def _group_offset(self):
+        # Number of widgets before the middle group starts
+        return self._buttons_per_group()  # first group length
+
+    def _find_middle_button(self, target):
+        try:
+            row = self.ids.nav_row
+        except Exception:
+            return None
+        labels = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker']
+        try:
+            idx_in_group = labels.index(target)
+        except ValueError:
+            return None
+        # middle group starts at offset
+        start = self._group_offset()
+        target_index = start + idx_in_group
+        try:
+            return row.children[::-1][target_index]  # children are reversed order
+        except Exception:
+            # Fallback by scanning buttons with text
+            for w in row.children:
+                if isinstance(w, Button):
+                    t = target
+                    if w.text == 'Players' and t == 'players':
+                        return w
+                    if w.text == 'Events' and t == 'eventslist':
+                        return w
+                    if w.text == 'League Tracker' and t == 'league':
+                        return w
+                    if w.text == 'Bingo' and t == 'bingo':
+                        return w
+                    if w.text == 'Draft Timer' and t == 'drafttimer':
+                        return w
+                    if w.text == 'Life Tracker' and t == 'lifetracker':
+                        return w
+            return None
+
+    def center_on(self, target):
+        # Center the selected middle-group button inside the scroll view
+        try:
+            sv = self.ids.nav_scroll
+            row = self.ids.nav_row
+        except Exception:
+            return
+        def _do_center(_dt):
+            btn = self._find_middle_button(target)
+            if not btn:
+                return
+            try:
+                # X position of btn center within row
+                bx = btn.x + btn.width / 2.0
+                # Desired left of ScrollView content so that bx aligns to center of sv
+                desired_left = bx - sv.width / 2.0
+                # Clamp within content bounds
+                max_left = max(0, row.width - sv.width)
+                desired_left = max(0, min(desired_left, max_left))
+                # Convert to scroll_x in [0,1]
+                sv.scroll_x = 0 if max_left == 0 else desired_left / max_left
+            except Exception:
+                pass
+        Clock.schedule_once(_do_center, 0)
+
+    def normalize_scroll(self):
+        # If user scrolls too far into group 1 or 3, snap back an equivalent position into group 2
+        try:
+            sv = self.ids.nav_scroll
+            row = self.ids.nav_row
+            per = self._buttons_per_group()
+        except Exception:
+            return
+        # Approximate width per group
+        try:
+            # Compute width of first 'per' children (from left): use reversed indexing
+            children = row.children[::-1]
+            group_width = sum(w.width for w in children[0:per])
+            total_width = row.width
+            view = sv.width
+            left = sv.scroll_x * max(0, total_width - view)
+            # If we are within first group region, shift by +group_width
+            if left < group_width * 0.5:
+                left += group_width
+            # If we are within last group region, shift by -group_width
+            elif left > total_width - view - group_width * 0.5:
+                left -= group_width
+            max_left = max(0, total_width - view)
+            sv.scroll_x = 0 if max_left == 0 else max(0, min(left, max_left)) / max_left
+        except Exception:
+            pass
+
+
 class DraftTimerScreen(Screen):
     def on_enter(self):
         cont = getattr(self, 'ids', {}).get('timer_container')
@@ -1467,7 +1571,13 @@ class DraftTimerScreen(Screen):
 class EventsApp(App):
     def build(self):
         Builder.load_file("ui.kv")
-        sm = ScreenManager(transition=NoTransition())
+        # Create root container with fixed BottomNav and a ScreenManager (id: sm)
+        from kivy.factory import Factory
+        root = Factory.Root()
+        sm = root.ids.sm
+        # Ensure transition is SlideTransition with short duration
+        sm.transition = SlideTransition(duration=0.18)
+        # Add all screens to ScreenManager
         sm.add_widget(PlayersScreen(name="players"))
         sm.add_widget(NewPlayerScreen(name="newplayer"))
         sm.add_widget(CreateEventDetailsScreen(name="createevent_details"))
@@ -1479,6 +1589,7 @@ class EventsApp(App):
         sm.add_widget(LeagueScreen(name="league"))
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
+        sm.add_widget(LifeTrackerScreen(name="lifetracker"))
         # Prefer the keyboard to overlap the UI (avoid panning the whole page)
         try:
             # below_target keeps the focused widget visible without moving the whole layout
@@ -1495,7 +1606,47 @@ class EventsApp(App):
             pass
         # Debounce storage for back handling
         self._back_debounce_until = 0
-        return sm
+        return root
+
+    def switch_tab(self, target: str):
+        """Switch between bottom tabs with direction based on relative position.
+        target: one of 'players','eventslist','league','bingo','drafttimer','lifetracker'
+        """
+        try:
+            sm = self.root.ids.sm
+        except Exception:
+            return
+        order = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker']
+        try:
+            cur = sm.current
+            i_cur = order.index(cur) if cur in order else None
+            i_tgt = order.index(target)
+            if i_cur is not None:
+                n = len(order)
+                d_fwd = (i_tgt - i_cur) % n   # moving rightward through list
+                d_back = (i_cur - i_tgt) % n  # moving leftward through list
+                if d_back < d_fwd:
+                    sm.transition.direction = 'right'  # shorter to go backward
+                elif d_fwd < d_back:
+                    sm.transition.direction = 'left'   # shorter to go forward
+                else:
+                    # Equal distance (opposites in even-sized list) — default to left
+                    sm.transition.direction = 'left'
+            else:
+                sm.transition.direction = 'left'
+        except Exception:
+            # Fallback to default left
+            try:
+                sm.transition.direction = 'left'
+            except Exception:
+                pass
+        sm.current = target
+        # Center the selected item in the bottom nav
+        try:
+            from kivy.clock import Clock as _Clock
+            _Clock.schedule_once(lambda dt: self.root.ids.bottomnav.center_on(target), 0)
+        except Exception:
+            pass
 
     def _consume_back_if_keyboard(self):
         """Close soft keyboard (by unfocusing any TextInput) and report whether we consumed the back.
@@ -1563,7 +1714,7 @@ class EventsApp(App):
         # Android: app is going to background; keep state, pause schedules if needed
         try:
             # Pause DraftTimer updates if present to save CPU (state is wall-clock based)
-            scr = self.root.get_screen("drafttimer")
+            scr = self.root.ids.sm.get_screen("drafttimer")
             if hasattr(scr, "_timer_widget") and hasattr(scr._timer_widget, "_cancel_schedule"):
                 scr._timer_widget._cancel_schedule()
         except Exception:
@@ -1574,19 +1725,20 @@ class EventsApp(App):
     def on_resume(self):
         # Resync timers when app returns to foreground
         try:
-            current = self.root.current
+            sm = self.root.ids.sm
+            current = sm.current
         except Exception:
             current = None
         # Event round timer: recompute remaining and reschedule
         try:
             if current == "event":
-                self.root.get_screen("event").maybe_start_timer()
+                sm.get_screen("event").maybe_start_timer()
         except Exception:
             pass
         # DraftTimer: reschedule updates using wall-clock remaining
         try:
             if current == "drafttimer":
-                scr = self.root.get_screen("drafttimer")
+                scr = sm.get_screen("drafttimer")
                 if hasattr(scr, "_timer_widget") and hasattr(scr._timer_widget, "on_app_resume"):
                     scr._timer_widget.on_app_resume()
         except Exception:

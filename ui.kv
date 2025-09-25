@@ -1,4 +1,14 @@
 #:import dp kivy.metrics.dp
+#:import SlideTransition kivy.uix.screenmanager.SlideTransition
+
+# Root container with fixed BottomNav
+<Root@BoxLayout>:
+    orientation: 'vertical'
+    ScreenManager:
+        id: sm
+        transition: SlideTransition(duration=0.18)
+    BottomNav:
+        id: bottomnav
 
 # Typography tokens
 <TitleLabel@Label>:
@@ -28,6 +38,174 @@
     background_normal: ''
     background_color: 0.9, 0.9, 0.9, 1
     color: 0.1, 0.1, 0.1, 1
+
+# Bottom navigation reusable widget
+<BottomNav>:
+    size_hint_y: None
+    height: dp(56)
+    ScrollView:
+        id: nav_scroll
+        size_hint_y: None
+        height: dp(56)
+        do_scroll_x: True
+        do_scroll_y: False
+        bar_width: 0
+        effect_y: None
+        on_scroll_stop: root.normalize_scroll()
+        BoxLayout:
+            id: nav_row
+            size_hint_x: None
+            width: self.minimum_width
+            height: dp(56)
+            orientation: 'horizontal'
+            spacing: 0
+            # Group 1 (for circular effect)
+            Button:
+                text: "Players"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('players')
+            Button:
+                text: "Events"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('eventslist')
+            Button:
+                text: "League Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('league')
+            Button:
+                text: "Bingo"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('bingo')
+            Button:
+                text: "Draft Timer"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('drafttimer')
+            Button:
+                text: "Life Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('lifetracker')
+            # Group 2 (middle group for centering)
+            Button:
+                text: "Players"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('players')
+            Button:
+                text: "Events"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('eventslist')
+            Button:
+                text: "League Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('league')
+            Button:
+                text: "Bingo"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('bingo')
+            Button:
+                text: "Draft Timer"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('drafttimer')
+            Button:
+                text: "Life Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('lifetracker')
+            # Group 3 (for circular effect)
+            Button:
+                text: "Players"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('players')
+            Button:
+                text: "Events"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('eventslist')
+            Button:
+                text: "League Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('league')
+            Button:
+                text: "Bingo"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('bingo')
+            Button:
+                text: "Draft Timer"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('drafttimer')
+            Button:
+                text: "Life Tracker"
+                size_hint_x: None
+                width: dp(140)
+                background_normal: ''
+                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
+                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                on_release: app.switch_tab('lifetracker')
 
 # Global button text alignment
 <Button>:
@@ -71,25 +249,6 @@
                 height: self.minimum_height
                 spacing: dp(6)
                 row_default_height: dp(56)
-
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <NewPlayerScreen>:
     BoxLayout:
@@ -302,24 +461,6 @@
                 height: self.minimum_height
                 spacing: dp(2)
                 row_default_height: dp(68)
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <EventScreen>:
     BoxLayout:
@@ -396,24 +537,6 @@
             SecondaryButton:
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <MatchRow>:
     size_hint_y: None
@@ -476,24 +599,6 @@
             Button:
                 text: "Begin Round 1"
                 on_release: root.confirm_and_begin()
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <StandingsScreen>:
     BoxLayout:
@@ -518,24 +623,6 @@
             Button:
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <LeagueScreen>:
     BoxLayout:
@@ -544,24 +631,6 @@
         spacing: dp(8)
         Label:
             text: "League Tracker (coming soon)"
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <BingoScreen>:
     BoxLayout:
@@ -570,24 +639,6 @@
         spacing: dp(8)
         Label:
             text: "Bingo (coming soon)"
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
 
 <DraftTimerScreen>:
     BoxLayout:
@@ -597,21 +648,15 @@
         BoxLayout:
             id: timer_container
             orientation: "vertical"
-        BoxLayout:
-            size_hint_y: None
-            height: dp(56)
-            Button:
-                text: "Players"
-                on_release: root.manager.current = "players"
-            Button:
-                text: "Events"
-                on_release: root.manager.current = "eventslist"
-            Button:
-                text: "League Tracker"
-                on_release: root.manager.current = "league"
-            Button:
-                text: "Bingo"
-                on_release: root.manager.current = "bingo"
-            Button:
-                text: "Draft Timer"
-                on_release: root.manager.current = "drafttimer"
+
+
+<LifeTrackerScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        Label:
+            text: "Life Tracker (content coming soon)"
+            halign: 'center'
+            valign: 'middle'
+            text_size: self.size
