@@ -435,6 +435,150 @@ KV = r'''
 # ----------------------
 from db import DB
 
+# ----------------------
+# Nickname helpers
+# ----------------------
+
+def _compute_unique_nickname(fullname: str) -> str:
+    name = (fullname or "").strip()
+    if not name:
+        return ""
+    parts = name.split()
+    first = parts[0]
+    surname = parts[1] if len(parts) > 1 else ""
+    # fetch existing nicknames
+    try:
+        rows = DB.execute("SELECT nickname FROM players WHERE nickname IS NOT NULL").fetchall()
+        existing = set(r[0] for r in rows if r and r[0])
+    except Exception:
+        existing = set()
+    # base nick
+    if not surname:
+        base = first
+    else:
+        base = f"{first} {surname[0]}."
+    if base not in existing:
+        return base
+    # extend surname letters
+    i = 1
+    while i < len(surname):
+        i += 1
+        cand = f"{first} {surname[:i]}."
+        if cand not in existing:
+            return cand
+    # fallback: append numeric suffix
+    n = 2
+    while True:
+        cand = f"{base[:-1]} {n}." if surname else f"{first} {n}"
+        if cand not in existing:
+            return cand
+        n += 1
+
+
+def _rebuild_all_nicknames():
+    # Recompute all nicknames so that within each first-name group, surnames use the minimal
+    # unique prefix length. Players without a surname use just the first name, with numeric
+    # suffixes if duplicates exist.
+    try:
+        rows = DB.execute("SELECT id, name FROM players ORDER BY id").fetchall()
+    except Exception:
+        return
+    # Parse players into components while preserving original case
+    players = []  # list of dicts: {id, first, surname, first_norm, surname_norm}
+    for pid, fullname in rows:
+        if not fullname:
+            continue
+        parts = str(fullname).strip().split()
+        first = parts[0]
+        surname = parts[1] if len(parts) > 1 else ""
+        players.append({
+            'id': pid,
+            'first': first,
+            'surname': surname,
+            'first_norm': first.lower(),
+            'surname_norm': surname.lower(),
+        })
+
+    # Group by first name (case-insensitive)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for p in players:
+        groups[p['first_norm']].append(p)
+
+    updates = []
+
+    def lcp_len(a: str, b: str) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    # Build nicknames per group
+    all_nicks = set()
+    for first_key, plist in groups.items():
+        # Split into with-surname and no-surname
+        with_surname = [p for p in plist if p['surname']]
+        no_surname = [p for p in plist if not p['surname']]
+
+        # Compute minimal unique prefix lengths for surnames in this first-name group
+        prefix_map = {}
+        for p in with_surname:
+            s = p['surname_norm']
+            # minimal k = 1 + max LCP with any other surname in the same group
+            max_lcp = 0
+            for q in with_surname:
+                if q is p:
+                    continue
+                max_lcp = max(max_lcp, lcp_len(s, q['surname_norm']))
+            k = max_lcp + 1
+            # Clamp to full length at most
+            k = min(k, len(p['surname']))
+            # Build nickname using original case for the prefix
+            nick = f"{p['first']} {p['surname'][:k]}."
+            prefix_map[p['id']] = nick
+
+        # Assign base nicknames for no-surname entries (first name only)
+        first_counts = {}
+        for p in no_surname:
+            base = p['first']
+            # ensure uniqueness within the no-surname subset first
+            first_counts[base] = first_counts.get(base, 0) + 1
+            count = first_counts[base]
+            nick = base if count == 1 else f"{base} {count}"
+            prefix_map[p['id']] = nick
+
+        # Now ensure global uniqueness across whole DB by appending minimal numeric suffixes if needed
+        for p in plist:
+            nick = prefix_map[p['id']]
+            if nick not in all_nicks:
+                all_nicks.add(nick)
+                updates.append((nick, p['id']))
+            else:
+                # Append incremental numeric suffix before the final dot if present
+                if nick.endswith('.'):
+                    base = nick[:-1]
+                    n = 2
+                    while f"{base} {n}." in all_nicks:
+                        n += 1
+                    nick2 = f"{base} {n}."
+                else:
+                    base = nick
+                    n = 2
+                    while f"{base} {n}" in all_nicks:
+                        n += 1
+                    nick2 = f"{base} {n}"
+                all_nicks.add(nick2)
+                updates.append((nick2, p['id']))
+
+    # apply updates
+    try:
+        for nick, pid in updates:
+            DB.execute("UPDATE players SET nickname=? WHERE id=?", (nick, pid))
+        DB.commit()
+    except Exception:
+        pass
+
 
 # ----------------------
 # UI Widgets
@@ -472,8 +616,14 @@ class PlayersScreen(Screen):
         # Create a lightweight popup to add a new player without leaving the list
         try:
             from kivy.uix.textinput import TextInput
-            content = BoxLayout(orientation='vertical', spacing=8, padding=10)
+            content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
             ti = TextInput(hint_text='Player name', multiline=False)
+            try:
+                ti.size_hint_y = None
+                ti.height = dp(48)
+                ti.font_size = '18sp'
+            except Exception:
+                pass
             # Trim leading spaces as user types
             def _lstrip(_inst, _val):
                 try:
@@ -482,14 +632,14 @@ class PlayersScreen(Screen):
                     pass
             ti.bind(text=_lstrip)
             # Buttons row
-            btns = BoxLayout(size_hint_y=None, height=dp(48), spacing=8)
+            btns = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
             btn_save = Button(text='Save')
             btn_cancel = Button(text='Cancel')
             btns.add_widget(btn_save)
             btns.add_widget(btn_cancel)
             content.add_widget(ti)
             content.add_widget(btns)
-            pop = Popup(title='Add New Player', content=content, size_hint=(0.9, 0.4))
+            pop = Popup(title='Add New Player', content=content, size_hint=(0.9, None), height=dp(180), pos_hint={'top': 0.95})
             
             def _submit(*_):
                 self._save_new_player_from_popup(ti.text, pop)
@@ -515,8 +665,25 @@ class PlayersScreen(Screen):
             except Exception:
                 pass
             return
-        DB.execute("INSERT INTO players (name) VALUES (?)", (name,))
+        # Avoid duplicate exact names (case-insensitive)
+        try:
+            row = DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (name,)).fetchone()
+            if row:
+                try:
+                    Popup(title="Duplicate name",
+                          content=Label(text="A player with this exact name already exists.", color=(0,0,0,1)),
+                          size_hint=(0.85, 0.35)).open()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        # Compute initial nickname and insert
+        nick = _compute_unique_nickname(name)
+        DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (name, nick))
         DB.commit()
+        # Recompute all nicknames to avoid new collisions
+        _rebuild_all_nicknames()
         try:
             popup.dismiss()
         except Exception:
@@ -530,7 +697,8 @@ class PlayersScreen(Screen):
 
     def _add_player_row(self, pid, name):
         row = BoxLayout(size_hint_y=None, height=dp(56))
-        lbl = Label(text=f"{name} (id:{pid})", color=(1,1,1,1))
+        # Show full name only on Players main list
+        lbl = Label(text=f"{name}", color=(1,1,1,1))
         btn_del = Button(text="Delete", size_hint_x=None, width=dp(200))
         try:
             btn_del.text_size = (None, None)
@@ -583,8 +751,24 @@ class NewPlayerScreen(Screen):
     def save_player(self, name):
         if not name or not name.strip():
             return
-        DB.execute("INSERT INTO players (name) VALUES (?)", (name.strip(),))
+        fullname = name.strip()
+        # Avoid duplicate exact names (case-insensitive)
+        try:
+            row = DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (fullname,)).fetchone()
+            if row:
+                try:
+                    Popup(title="Duplicate name",
+                          content=Label(text="A player with this exact name already exists.", color=(0,0,0,1)),
+                          size_hint=(0.85, 0.35)).open()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        nick = _compute_unique_nickname(fullname)
+        DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (fullname, nick))
         DB.commit()
+        _rebuild_all_nicknames()
         # Navigate back to Players and clear the filter so the new player is visible
         try:
             players = self.manager.get_screen("players")
@@ -643,16 +827,17 @@ class CreateEventScreen(Screen):
             filt = ""
         if not hasattr(self, 'selected_ids'):
             self.selected_ids = set()
-        cur = DB.execute("SELECT id, name FROM players ORDER BY name")
+        cur = DB.execute("SELECT id, COALESCE(nickname, name) as dname, name FROM players ORDER BY name")
         rows = cur.fetchall()
-        for pid, name in rows:
+        for pid, disp_name, full_name in rows:
             # Skip players already added to the event (they will appear in the Selected list)
             if pid in self.selected_ids:
                 continue
-            if filt and filt not in name.lower():
+            hay = f"{disp_name} {full_name}".lower()
+            if filt and filt not in hay:
                 continue
             row = BoxLayout(size_hint_y=None, height=dp(56))
-            lbl = Label(text=name)
+            lbl = Label(text=disp_name)
             # Make label flexible and centered; button has fixed width (prevents clipping)
             try:
                 lbl.size_hint_x = 1
@@ -698,7 +883,7 @@ class CreateEventScreen(Screen):
         if hasattr(self, 'selected_ids') and self.selected_ids:
             for pid in sorted(self.selected_ids, key=lambda x: x):
                 try:
-                    name = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                    name = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                     name = name[0] if name else f"Player {pid}"
                 except Exception:
                     name = f"Player {pid}"
@@ -751,7 +936,7 @@ class CreateEventScreen(Screen):
             self.selected_ids = set()
         for pid in self.selected_ids:
             try:
-                row = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                row = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                 if row:
                     chosen.append((pid, row[0]))
             except Exception:
@@ -784,7 +969,7 @@ class CreateEventScreen(Screen):
         if not hasattr(self, 'selected_ids'):
             self.selected_ids = set()
         for pid in self.selected_ids:
-            row = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+            row = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
             if row:
                 chosen.append((pid, row[0]))
         # plus any guests explicitly added
@@ -1141,7 +1326,7 @@ class SeatingScreen(Screen):
                 self.selected.append((None, gname))
                 self.seating.append((None, gname))
             else:
-                pname = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+                pname = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                 pname = pname[0] if pname else f"Player {pid}"
                 self.selected.append((pid, pname))
                 self.seating.append((pid, pname))
@@ -1294,6 +1479,11 @@ class EventsApp(App):
         sm.add_widget(LeagueScreen(name="league"))
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
+        # Improve soft keyboard behavior on mobile so content pans above it
+        try:
+            Window.softinput_mode = 'pan'
+        except Exception:
+            pass
         # Bind back/escape key to close the keyboard instead of exiting
         try:
             Window.bind(on_keyboard=self._on_keyboard)
@@ -1302,8 +1492,8 @@ class EventsApp(App):
         return sm
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
-        # Android back / Desktop Escape = 27
-        if key == 27:
+        # Android back / Desktop Escape; some providers use 1001 for back
+        if key in (27, 1001):
             try:
                 from kivy.uix.textinput import TextInput
                 # Search any focused TextInput in open Popups (Window.children) and root tree
@@ -1324,6 +1514,12 @@ class EventsApp(App):
                 # Then check the app root
                 if self.root and unfocus_in_tree(self.root):
                     return True
+                # If soft keyboard is visible, consume the back press
+                try:
+                    if getattr(Window, 'keyboard_height', 0) and Window.keyboard_height > 0:
+                        return True
+                except Exception:
+                    pass
             except Exception:
                 # If anything goes wrong, do not block default behavior
                 return False

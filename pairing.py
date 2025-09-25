@@ -17,7 +17,7 @@ def get_name_for_event_player(event_id: int, event_player_db_id: Optional[int]) 
     if guest:
         return guest
     if pid:
-        r = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
+        r = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
         return r[0] if r else "Unknown"
     return "Unknown"
 
@@ -49,8 +49,15 @@ def compute_standings(event_id: int):
         if guest:
             return guest
         if pid:
-            r = DB.execute("SELECT name FROM players WHERE id=?", (pid,)).fetchone()
-            return r[0] if r else "Unknown"
+            # Fetch full name and nickname; choose nickname only if full name length >= 20
+            r = DB.execute("SELECT name, nickname FROM players WHERE id=?", (pid,)).fetchone()
+            if r:
+                full_name = r[0] or ""
+                nick = r[1]
+                if len(full_name) >= 20 and nick:
+                    return nick
+                return full_name
+            return "Unknown"
         return "Unknown"
 
     name_map = {eid: display_name((eid, pid, guest)) for eid, pid, guest in players}
@@ -152,7 +159,7 @@ def generate_round_one(event_id: int) -> None:
     if not rows:
         return
     # convert rows to list of (event_player_id, displayname)
-    seating = [(r[0], r[2] if r[2] else (DB.execute("SELECT name FROM players WHERE id=?", (r[1],)).fetchone()[0])) for r in rows]
+    seating = [(r[0], r[2] if r[2] else (DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (r[1],)).fetchone()[0])) for r in rows]
     n = len(seating)
     # If odd, choose random bye - remove it from pairing list
     bye_id = None
