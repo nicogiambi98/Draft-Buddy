@@ -595,6 +595,29 @@ class NewPlayerScreen(Screen):
         self.manager.current = "players"
 
 
+class CreateEventDetailsScreen(Screen):
+    def next_to_players(self, name, etype, rounds, round_time):
+        # sanitize and store on CreateEventScreen
+        name = (name or '').strip() or f"Event {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        etype = (etype or 'draft').strip() or 'draft'
+        r = int(rounds) if rounds and str(rounds).isdigit() else 3
+        rt_mins = int(round_time) if round_time and str(round_time).isdigit() else 30
+        rt = rt_mins * 60
+        try:
+            create = self.manager.get_screen("createevent")
+            create._event_name = name
+            create._event_type = etype
+            create._rounds = r
+            create._round_time = rt
+        except Exception:
+            pass
+        # Go to players selection page
+        try:
+            self.manager.current = "createevent"
+        except Exception:
+            pass
+
+
 class CreateEventScreen(Screen):
     seating = ListProperty([])  # deprecated for seating preview
     guest_list = ListProperty([])  # list of (None, guest_name)
@@ -630,13 +653,25 @@ class CreateEventScreen(Screen):
                 continue
             row = BoxLayout(size_hint_y=None, height=dp(56))
             lbl = Label(text=name)
+            # Make label flexible and centered; button has fixed width (prevents clipping)
+            try:
+                lbl.size_hint_x = 1
+                lbl.halign = 'center'
+                lbl.valign = 'middle'
+                lbl.shorten = True
+                # Centering requires text_size to match width
+                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width, None)))
+            except Exception:
+                pass
             def add_player(instance, _pid=pid):
                 self.selected_ids.add(_pid)
                 # Rebuild lists so the player disappears here and appears in Selected
                 self.refresh_players()
                 self.update_selected_view()
-            btn = Button(text="Add", size_hint_x=None, width=dp(120))
+            btn = Button(text="Add")
             try:
+                btn.size_hint_x = None
+                btn.width = dp(80)
                 btn.text_size = (None, None)
                 btn.shorten = True
                 btn.font_size = '18sp'
@@ -742,7 +777,7 @@ class CreateEventScreen(Screen):
             except Exception:
                 pass
 
-    def start_event(self, name, etype, rounds, round_time):
+    def start_event(self):
         # collect selected players and guests, then navigate to SeatingScreen
         chosen = []
         # Build from selected_ids to avoid dependence on filter/UI list
@@ -756,12 +791,13 @@ class CreateEventScreen(Screen):
         chosen.extend(self.guest_list)
         if len(chosen) < 2:
             return
+        # Retrieve stored event details (set by CreateEventDetailsScreen)
+        name = getattr(self, '_event_name', f"Event {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        etype = getattr(self, '_event_type', 'draft')
+        r = int(getattr(self, '_rounds', 3) or 3)
+        rt = int(getattr(self, '_round_time', 30*60) or 30*60)
         # Let seating screen handle event creation and round 1
         seat_screen = self.manager.get_screen("seating")
-        # sanitize rounds and round_time
-        r = int(rounds) if rounds and str(rounds).isdigit() else 3
-        rt_mins = int(round_time) if round_time and str(round_time).isdigit() else 30
-        rt = rt_mins * 60
         seat_screen.set_data(chosen, name, etype, r, rt)
         self.manager.current = "seating"
 
@@ -1151,7 +1187,7 @@ class StandingsScreen(Screen):
             lbl = Label(text=(f"[b]{text}[/b]" if bold else text),
                         markup=True,
                         size_hint_y=None,
-                        height=28,
+                        height=dp(42),
                         color=(1,1,1,1),
                         halign=halign,
                         valign='middle')
@@ -1167,7 +1203,6 @@ class StandingsScreen(Screen):
 
         # Data rows
         from kivy.uix.scrollview import ScrollView
-        from kivy.metrics import dp
         for rank, st in enumerate(standings, start=1):
             name = st['name']
             mp = st['mp']
@@ -1183,7 +1218,7 @@ class StandingsScreen(Screen):
                 if i == 1:
                     # Name column: make it horizontally scrollable if too long
                     sv = ScrollView(size_hint_y=None,
-                                    height=28,
+                                    height=dp(42),
                                     do_scroll_x=True,
                                     do_scroll_y=False,
                                     bar_width=0)
@@ -1195,7 +1230,7 @@ class StandingsScreen(Screen):
                     name_lbl = Label(text=val,
                                      markup=True,
                                      size_hint_y=None,
-                                     height=28,
+                                     height=dp(42),
                                      color=(1,1,1,1),
                                      halign='left',
                                      valign='middle',
@@ -1250,6 +1285,7 @@ class EventsApp(App):
         sm = ScreenManager(transition=NoTransition())
         sm.add_widget(PlayersScreen(name="players"))
         sm.add_widget(NewPlayerScreen(name="newplayer"))
+        sm.add_widget(CreateEventDetailsScreen(name="createevent_details"))
         sm.add_widget(CreateEventScreen(name="createevent"))
         sm.add_widget(EventsListScreen(name="eventslist"))
         sm.add_widget(EventScreen(name="event"))

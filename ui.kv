@@ -115,47 +115,103 @@
                 text: "Back"
                 on_release: root.manager.current = "players"
 
+<CreateEventDetailsScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(12)
+        spacing: dp(10)
+        TitleLabel:
+            text: "Create Event"
+            size_hint_y: None
+            height: dp(40)
+        AnchorLayout:
+            anchor_x: 'center'
+            anchor_y: 'center'
+            size_hint_y: 1
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_x: 0.96
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(12)
+                canvas.before:
+                    Color:
+                        rgba: 1,1,1,1
+                    Line:
+                        rectangle: (self.x, self.y, self.width, self.height)
+                        width: 1.2
+                GridLayout:
+                    cols: 2
+                    col_default_width: dp(140)
+                    col_force_default: False
+                    size_hint_y: None
+                    height: self.minimum_height
+                    row_default_height: dp(48)
+                    row_force_default: True
+                    spacing: dp(8)
+                    padding: [dp(8), dp(8)]
+                    HeaderLabel:
+                        text: "Event name"
+                        size_hint_x: None
+                        width: dp(140)
+                    TextInput:
+                        id: event_name
+                        hint_text: "Event name"
+                        multiline: False
+                        on_text: self.text = self.text.lstrip()
+                        on_text_validate: rounds_input.focus = True
+                    HeaderLabel:
+                        text: "Type"
+                        size_hint_x: None
+                        width: dp(140)
+                    Spinner:
+                        id: event_type
+                        text: "draft"
+                        values: ["draft", "sealed", "cube"]
+                        size_hint_y: None
+                        height: dp(48)
+                    HeaderLabel:
+                        text: "Rounds"
+                        size_hint_x: None
+                        width: dp(140)
+                    TextInput:
+                        id: rounds_input
+                        hint_text: "e.g. 3"
+                        multiline: False
+                        input_filter: "int"
+                        on_text: self.text = self.text.lstrip()
+                        on_text_validate: round_time.focus = True
+                    HeaderLabel:
+                        text: "Round time (min)"
+                        size_hint_x: None
+                        width: dp(140)
+                    TextInput:
+                        id: round_time
+                        hint_text: "e.g. 30"
+                        multiline: False
+                        input_filter: "int"
+                        on_text: self.text = self.text.lstrip()
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(52)
+                    spacing: dp(8)
+                    PrimaryButton:
+                        text: "Next: Add Players"
+                        on_release:
+                            root.next_to_players(event_name.text, event_type.text, rounds_input.text, round_time.text)
+                    SecondaryButton:
+                        text: "Cancel"
+                        on_release: root.manager.current = "eventslist"
+
 <CreateEventScreen>:
     BoxLayout:
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
         TitleLabel:
-            text: "Create Event"
+            text: "Add Players"
             size_hint_y: None
             height: dp(32)
-        BoxLayout:
-            size_hint_y: None
-            height: dp(36)
-            TextInput:
-                id: event_name
-                hint_text: "Event name"
-                multiline: False
-                on_text: self.text = self.text.lstrip()
-                on_text_validate: rounds_input.focus = True
-            Spinner:
-                id: event_type
-                text: "draft"
-                values: ["draft", "sealed", "cube"]
-                size_hint_x: None
-                width: dp(120)
-        BoxLayout:
-            size_hint_y: None
-            height: dp(36)
-            TextInput:
-                id: rounds_input
-                hint_text: "Rounds (e.g. 3)"
-                multiline: False
-                input_filter: "int"
-                on_text: self.text = self.text.lstrip()
-                on_text_validate: round_time.focus = True
-            TextInput:
-                id: round_time
-                hint_text: "Round time (min)"
-                multiline: False
-                input_filter: "int"
-                on_text: self.text = self.text.lstrip()
-                on_text_validate: filter_input.focus = True
         BoxLayout:
             size_hint_y: None
             height: dp(36)
@@ -164,52 +220,57 @@
                 hint_text: "Filter players..."
                 multiline: False
                 on_text: self.text = self.text.lstrip(); root.filter_players(self.text)
-        HeaderLabel:
-            text: "Select players (or add guests)"
-            size_hint_y: None
-            height: dp(24)
-        ScrollView:
-            canvas.after:
-                Color:
-                    rgba: 1, 1, 1, 1
-                Line:
-                    rectangle: (self.x, self.y, self.width, self.height)
-                    width: 1.2
-            GridLayout:
-                id: players_select
-                cols: 1
-                size_hint_y: None
-                height: self.minimum_height
-                spacing: dp(6)
-                row_default_height: dp(56)
-        HeaderLabel:
-            text: "Selected players:"
-            size_hint_y: None
-            height: dp(24)
-        ScrollView:
-            canvas.after:
-                Color:
-                    rgba: 1, 1, 1, 1
-                Line:
-                    rectangle: (self.x, self.y, self.width, self.height)
-                    width: 1.2
-            GridLayout:
-                id: selected_list
-                cols: 1
-                size_hint_y: None
-                height: self.minimum_height
-                spacing: dp(2)
-                row_default_height: dp(56)
+        BoxLayout:
+            spacing: dp(8)
+            BoxLayout:
+                orientation: 'vertical'
+                HeaderLabel:
+                    text: "Selectable players"
+                    size_hint_y: None
+                    height: dp(24)
+                ScrollView:
+                    canvas.after:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        Line:
+                            rectangle: (self.x, self.y, self.width, self.height)
+                            width: 1.2
+                    GridLayout:
+                        id: players_select
+                        cols: 1
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(6)
+                        row_default_height: dp(56)
+            BoxLayout:
+                orientation: 'vertical'
+                HeaderLabel:
+                    text: "Selected players"
+                    size_hint_y: None
+                    height: dp(24)
+                ScrollView:
+                    canvas.after:
+                        Color:
+                            rgba: 1, 1, 1, 1
+                        Line:
+                            rectangle: (self.x, self.y, self.width, self.height)
+                            width: 1.2
+                    GridLayout:
+                        id: selected_list
+                        cols: 1
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(2)
+                        row_default_height: dp(56)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
             PrimaryButton:
-                text: "Start Event"
-                on_release:
-                    root.start_event(event_name.text, event_type.text, rounds_input.text, round_time.text)
+                text: "Next: Seating"
+                on_release: root.start_event()
             SecondaryButton:
-                text: "Cancel"
-                on_release: root.manager.current = "players"
+                text: "Back"
+                on_release: root.manager.current = "createevent_details"
 
 <EventsListScreen>:
     BoxLayout:
@@ -226,7 +287,7 @@
                 size_hint_x: None
                 width: dp(140)
                 height: dp(40)
-                on_release: root.manager.current = "createevent"
+                on_release: root.manager.current = "createevent_details"
         ScrollView:
             canvas.after:
                 Color:
@@ -450,7 +511,7 @@
                 size_hint_y: None
                 height: self.minimum_height
                 spacing: dp(4)
-                row_default_height: dp(28)
+                row_default_height: dp(42)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
