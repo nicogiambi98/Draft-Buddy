@@ -1,14 +1,23 @@
 #:import dp kivy.metrics.dp
 #:import SlideTransition kivy.uix.screenmanager.SlideTransition
 
-# Root container with fixed BottomNav
-<Root@BoxLayout>:
-    orientation: 'vertical'
-    ScreenManager:
-        id: sm
-        transition: SlideTransition(duration=0.18)
-    BottomNav:
-        id: bottomnav
+# Root container with fixed BottomNav and Toast overlay
+<Root@FloatLayout>:
+    # Main vertical stack
+    BoxLayout:
+        id: main_stack
+        orientation: 'vertical'
+        size_hint: 1, 1
+        ScreenManager:
+            id: sm
+            transition: SlideTransition(duration=0.18)
+        BottomNav:
+            id: bottomnav
+    # Toast overlay layer (covers entire root without affecting layout)
+    FloatLayout:
+        id: toast_layer
+        size_hint: 1, 1
+        pos: 0, 0
 
 # Typography tokens
 <TitleLabel@Label>:
@@ -29,29 +38,62 @@
     height: dp(48)
     padding: [dp(12), dp(10)]
     background_normal: ''
-    background_color: 0.16, 0.47, 0.96, 1  # blue
-    color: 1, 1, 1, 1
+    background_down: ''
+    background_color: 0, 0, 0, 0  # use canvas
+    color: (app.theme['on_primary'] if not self.disabled else (1,1,1,0.7)) if hasattr(app, 'theme') else (1,1,1,1)
+    canvas.before:
+        Color:
+            rgba: (0.7,0.7,0.7,1) if self.disabled else ((app.theme['primary'][0], app.theme['primary'][1], app.theme['primary'][2], 0.8) if self.state=='down' else app.theme['primary']) if hasattr(app, 'theme') else ((0.16, 0.47, 0.96, 0.8) if self.state=='down' else (0.16, 0.47, 0.96, 1))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10),]
+    canvas.after:
+        Color:
+            rgba: (app.theme['on_primary'][0], app.theme['on_primary'][1], app.theme['on_primary'][2], 0.35) if hasattr(app, 'theme') else (1,1,1,0.35)
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(10))
+            width: 1.2
 <SecondaryButton@Button>:
     size_hint_y: None
     height: dp(48)
     padding: [dp(12), dp(10)]
     background_normal: ''
-    background_color: 0.9, 0.9, 0.9, 1
-    color: 0.1, 0.1, 0.1, 1
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    color: (app.theme['on_surface'] if not self.disabled else (0,0,0,0.6)) if hasattr(app, 'theme') else (0.1,0.1,0.1,1)
+    canvas.before:
+        Color:
+            rgba: ((0.85,0.85,0.85,1) if self.disabled else ((0.92,0.92,0.92,1) if self.state=='normal' else (0.86,0.86,0.86,1))) if not hasattr(app, 'theme') else (((0.85,0.85,0.85,1) if self.disabled else ((app.theme['surface'][0], app.theme['surface'][1], app.theme['surface'][2], 1) if self.state=='normal' else (app.theme['surface'][0]-0.06, app.theme['surface'][1]-0.06, app.theme['surface'][2]-0.06, 1))))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10),]
+    canvas.after:
+        Color:
+            rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.35) if hasattr(app, 'theme') else (0,0,0,0.35)
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(10))
+            width: 1.2
 
 # Bottom navigation reusable widget
 <BottomNav>:
     size_hint_y: None
     height: dp(56)
+    canvas.before:
+        Color:
+            rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.28) if hasattr(app, 'theme') else (0,0,0,0.28)
+        Rectangle:
+            pos: self.x, self.top - dp(1)
+            size: self.width, dp(1)
     ScrollView:
         id: nav_scroll
         size_hint_y: None
         height: dp(56)
-        do_scroll_x: True
+        do_scroll_x: False
         do_scroll_y: False
         bar_width: 0
         effect_y: None
-        on_scroll_stop: root.normalize_scroll()
         BoxLayout:
             id: nav_row
             size_hint_x: None
@@ -59,54 +101,55 @@
             height: dp(56)
             orientation: 'horizontal'
             spacing: 0
+            # helper lambda-like via ternary expressions
             # Group 1 (for circular effect)
             Button:
                 text: "Players"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('players')
             Button:
                 text: "Events"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
             Button:
                 text: "League Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('league')
             Button:
                 text: "Bingo"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('bingo')
             Button:
                 text: "Draft Timer"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('drafttimer')
             Button:
                 text: "Life Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
             # Group 2 (middle group for centering)
             Button:
@@ -114,48 +157,48 @@
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('players')
             Button:
                 text: "Events"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
             Button:
                 text: "League Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('league')
             Button:
                 text: "Bingo"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('bingo')
             Button:
                 text: "Draft Timer"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('drafttimer')
             Button:
                 text: "Life Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
             # Group 3 (for circular effect)
             Button:
@@ -163,48 +206,48 @@
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'players' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='players') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('players')
             Button:
                 text: "Events"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'eventslist' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
             Button:
                 text: "League Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'league' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='league') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('league')
             Button:
                 text: "Bingo"
                 size_hint_x: None
                 width: dp(120)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'bingo' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='bingo') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('bingo')
             Button:
                 text: "Draft Timer"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'drafttimer' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='drafttimer') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('drafttimer')
             Button:
                 text: "Life Tracker"
                 size_hint_x: None
                 width: dp(140)
                 background_normal: ''
-                background_color: (0.16, 0.47, 0.96, 1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.92, 0.92, 0.92, 1)
-                color: (1,1,1,1) if app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current == 'lifetracker' else (0.1,0.1,0.1,1)
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
 
 # Global button text alignment
@@ -214,6 +257,12 @@
     halign: 'center'
     valign: 'middle'
     padding: [dp(4), dp(4)]
+    canvas.after:
+        Color:
+            rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.28) if hasattr(app, 'theme') else (0,0,0,0.28)
+        Line:
+            rectangle: (self.x, self.y, self.width, self.height)
+            width: 1.0
 
 <PlayersScreen>:
     BoxLayout:
@@ -579,10 +628,19 @@
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
-            markup: True
-            text: "[b]Table Seating[/b]"
+        TitleLabel:
+            text: "Table Seating"
+            size_hint_y: None
+            height: dp(32)
         ScrollView:
+            id: seat_sv
+            do_scroll_x: False
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 1
+                Line:
+                    rectangle: (self.x, self.y, self.width, self.height)
+                    width: 1.2
             GridLayout:
                 id: seating_list
                 cols: 1
@@ -605,11 +663,20 @@
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
+        TitleLabel:
             id: standings_title
-            markup: True
-            text: "[b]Standings[/b]"
+            text: "Standings"
+            size_hint_y: None
+            height: dp(32)
         ScrollView:
+            id: std_sv
+            do_scroll_x: False
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 1
+                Line:
+                    rectangle: (self.x, self.y, self.width, self.height)
+                    width: 1.2
             GridLayout:
                 id: standings_grid
                 cols: 7
@@ -660,3 +727,47 @@
             halign: 'center'
             valign: 'middle'
             text_size: self.size
+
+
+# Toast component
+<Toast@BoxLayout>:
+    text: ''
+    size_hint: None, None
+    size: self.minimum_size
+    opacity: 0
+    padding: [dp(14), dp(10)]
+    spacing: dp(6)
+    pos_hint: {'center_x': 0.5}
+    canvas.before:
+        Color:
+            rgba: (0,0,0,0.9) if not hasattr(app, 'theme') else (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.9)
+        RoundedRectangle:
+            pos: self.x, self.y, self.width, self.height
+            size: self.size
+            radius: [dp(12),]
+    Label:
+        id: toast_label
+        text: root.text
+        color: (1,1,1,1)
+        font_size: '14sp'
+        size_hint: None, None
+        size: self.texture_size
+
+
+# Scoped style: draw visible separators at the LEFT edge of each BottomNav button
+<BottomNav Button>:
+    # Force flat background and compute color per active tab
+    background_normal: ''
+    background_down: ''
+    # Active tab? compare center group button text with ScreenManager current
+    background_color: ((app.theme['primary']) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker'))) else (0.23, 0.23, 0.25, 1)) if hasattr(app, 'theme') else ((0.16,0.47,0.96,1) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker'))) else (0.23,0.23,0.25,1))
+    color: 1, 1, 1, 1
+    on_kv_post: self.color = (1,1,1,1)
+    # High-contrast left divider
+    canvas.after:
+        Color:
+            rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.95) if hasattr(app, 'theme') else (0,0,0,0.95)
+        Rectangle:
+            # vertical divider along the left edge of the button (slight inset top/bottom)
+            pos: self.x, self.y + dp(6)
+            size: dp(2), self.height - dp(12)

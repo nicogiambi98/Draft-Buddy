@@ -11,7 +11,7 @@ from datetime import datetime
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, NumericProperty
+from kivy.properties import StringProperty, ListProperty, NumericProperty, DictProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
@@ -25,6 +25,7 @@ from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
+from kivy.animation import Animation
 
 # Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
 # Only apply on desktop platforms to avoid interfering with mobile builds
@@ -331,10 +332,19 @@ KV = r'''
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
-            markup: True
-            text: "[b]Table Seating[/b]"
+        TitleLabel:
+            text: "Table Seating"
+            size_hint_y: None
+            height: dp(32)
         ScrollView:
+            id: seat_sv
+            do_scroll_x: False
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 1
+                Line:
+                    rectangle: (self.x, self.y, self.width, self.height)
+                    width: 1.2
             GridLayout:
                 id: seating_list
                 cols: 1
@@ -372,11 +382,20 @@ KV = r'''
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
+        TitleLabel:
             id: standings_title
-            markup: True
-            text: "[b]Standings[/b]"
+            text: "Standings"
+            size_hint_y: None
+            height: dp(32)
         ScrollView:
+            id: std_sv
+            do_scroll_x: False
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 1
+                Line:
+                    rectangle: (self.x, self.y, self.width, self.height)
+                    width: 1.2
             GridLayout:
                 id: standings_grid
                 cols: 1
@@ -778,6 +797,10 @@ class NewPlayerScreen(Screen):
         except Exception:
             pass
         self.manager.current = "players"
+        try:
+            App.get_running_app().show_toast("Player saved", timeout=1.8)
+        except Exception:
+            pass
 
 
 class CreateEventDetailsScreen(Screen):
@@ -1358,7 +1381,7 @@ class StandingsScreen(Screen):
         self.event_id = event_id
         row = DB.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
         title = row[0] if row else "Standings"
-        self.ids.standings_title.text = f"[b]{title} — Final Standings[/b]"
+        self.ids.standings_title.text = f"{title} — Final Standings"
         self.refresh()
 
     def refresh(self):
@@ -1569,6 +1592,18 @@ class DraftTimerScreen(Screen):
 # App Setup
 # ----------------------
 class EventsApp(App):
+    # Theme scaffold (Phase 2): centralized color tokens
+    theme = DictProperty({
+        'primary': (0.16, 0.47, 0.96, 1),
+        'on_primary': (1, 1, 1, 1),
+        'surface': (0.95, 0.95, 0.95, 1),
+        'on_surface': (0.1, 0.1, 0.1, 1),
+        'background': (0.98, 0.98, 0.98, 1),
+        'success': (0.20, 0.70, 0.30, 1),
+        'warning': (1.00, 0.75, 0.00, 1),
+        'error': (0.85, 0.22, 0.22, 1),
+    })
+
     def build(self):
         Builder.load_file("ui.kv")
         # Create root container with fixed BottomNav and a ScreenManager (id: sm)
@@ -1607,6 +1642,55 @@ class EventsApp(App):
         # Debounce storage for back handling
         self._back_debounce_until = 0
         return root
+
+    def show_toast(self, message: str, timeout: float = 2.0):
+        """Show a lightweight toast message at the bottom center, auto-dismiss."""
+        try:
+            layer = self.root.ids.toast_layer
+        except Exception:
+            return
+        try:
+            from kivy.factory import Factory
+            toast = Factory.Toast(text=message)
+        except Exception:
+            return
+        # Initial placement: bottom center above BottomNav (~56dp) with margin
+        margin = dp(12)
+        bottom_bar_h = dp(56)
+        layer.add_widget(toast)
+        # Position after next frame to get proper size
+        def _place(_dt):
+            try:
+                toast.x = (layer.width - toast.width) / 2.0
+                toast.y = bottom_bar_h + margin
+            except Exception:
+                pass
+            # Fade in
+            try:
+                Animation.cancel_all(toast)
+                Animation(opacity=1.0, d=0.18, t='out_quad').start(toast)
+            except Exception:
+                pass
+            # Schedule fade out and removal
+            def _dismiss(_dt2):
+                try:
+                    anim = Animation(opacity=0.0, d=0.18, t='out_quad')
+                    def _remove(*_a):
+                        try:
+                            if toast.parent:
+                                toast.parent.remove_widget(toast)
+                        except Exception:
+                            pass
+                    anim.bind(on_complete=lambda *_: _remove())
+                    anim.start(toast)
+                except Exception:
+                    try:
+                        if toast.parent:
+                            toast.parent.remove_widget(toast)
+                    except Exception:
+                        pass
+            Clock.schedule_once(_dismiss, max(0.1, float(timeout)))
+        Clock.schedule_once(_place, 0)
 
     def switch_tab(self, target: str):
         """Switch between bottom tabs with direction based on relative position.
