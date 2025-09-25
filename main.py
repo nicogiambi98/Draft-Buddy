@@ -521,6 +521,11 @@ class PlayersScreen(Screen):
             popup.dismiss()
         except Exception:
             pass
+        # Clear the Players filter so the new player is visible in full list
+        try:
+            self.ids.filter_input.text = ""
+        except Exception:
+            pass
         self.refresh()
 
     def _add_player_row(self, pid, name):
@@ -580,6 +585,13 @@ class NewPlayerScreen(Screen):
             return
         DB.execute("INSERT INTO players (name) VALUES (?)", (name.strip(),))
         DB.commit()
+        # Navigate back to Players and clear the filter so the new player is visible
+        try:
+            players = self.manager.get_screen("players")
+            players.ids.filter_input.text = ""
+            players.refresh()
+        except Exception:
+            pass
         self.manager.current = "players"
 
 
@@ -1246,7 +1258,40 @@ class EventsApp(App):
         sm.add_widget(LeagueScreen(name="league"))
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
+        # Bind back/escape key to close the keyboard instead of exiting
+        try:
+            Window.bind(on_keyboard=self._on_keyboard)
+        except Exception:
+            pass
         return sm
+
+    def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
+        # Android back / Desktop Escape = 27
+        if key == 27:
+            try:
+                from kivy.uix.textinput import TextInput
+                # Search any focused TextInput in open Popups (Window.children) and root tree
+                def unfocus_in_tree(widget):
+                    found = False
+                    try:
+                        for w in widget.walk():
+                            if isinstance(w, TextInput) and getattr(w, 'focus', False):
+                                w.focus = False
+                                found = True
+                    except Exception:
+                        pass
+                    return found
+                # Check popups and overlays first
+                for child in list(Window.children):
+                    if unfocus_in_tree(child):
+                        return True
+                # Then check the app root
+                if self.root and unfocus_in_tree(self.root):
+                    return True
+            except Exception:
+                # If anything goes wrong, do not block default behavior
+                return False
+        return False
 
     def on_pause(self):
         # Android: app is going to background; keep state, pause schedules if needed
