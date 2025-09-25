@@ -1479,50 +1479,84 @@ class EventsApp(App):
         sm.add_widget(LeagueScreen(name="league"))
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
-        # Improve soft keyboard behavior on mobile so content pans above it
+        # Prefer the keyboard to overlap the UI (avoid panning the whole page)
         try:
-            Window.softinput_mode = 'pan'
+            # below_target keeps the focused widget visible without moving the whole layout
+            Window.softinput_mode = 'below_target'
         except Exception:
             pass
         # Bind back/escape key to close the keyboard instead of exiting
         try:
             Window.bind(on_keyboard=self._on_keyboard)
+            # Some android providers deliver back via on_key_down and on_request_close as well
+            Window.bind(on_key_down=self._on_key_down)
+            Window.bind(on_request_close=self._on_request_close)
         except Exception:
             pass
+        # Debounce storage for back handling
+        self._back_debounce_until = 0
         return sm
+
+    def _consume_back_if_keyboard(self):
+        """Close soft keyboard (by unfocusing any TextInput) and report whether we consumed the back.
+        Also handles a short debounce to swallow duplicate back events fired by some providers.
+        """
+        import time as _t
+        # Debounce repeated back within 300ms
+        try:
+            if _t.time() < getattr(self, '_back_debounce_until', 0):
+                return True
+        except Exception:
+            pass
+        consumed = False
+        try:
+            from kivy.uix.textinput import TextInput
+            def unfocus_in_tree(widget):
+                nonlocal consumed
+                try:
+                    for w in widget.walk():
+                        if isinstance(w, TextInput) and getattr(w, 'focus', False):
+                            w.focus = False
+                            consumed = True
+                except Exception:
+                    pass
+            # Check popups/overlays first
+            for child in list(Window.children):
+                unfocus_in_tree(child)
+            # Then the app root
+            if self.root:
+                unfocus_in_tree(self.root)
+            # If the soft keyboard is visible, also consume
+            try:
+                if getattr(Window, 'keyboard_height', 0) and Window.keyboard_height > 0:
+                    consumed = True
+            except Exception:
+                pass
+        except Exception:
+            return False
+        if consumed:
+            try:
+                self._back_debounce_until = _t.time() + 0.3
+            except Exception:
+                pass
+        return consumed
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
         # Android back / Desktop Escape; some providers use 1001 for back
         if key in (27, 1001):
-            try:
-                from kivy.uix.textinput import TextInput
-                # Search any focused TextInput in open Popups (Window.children) and root tree
-                def unfocus_in_tree(widget):
-                    found = False
-                    try:
-                        for w in widget.walk():
-                            if isinstance(w, TextInput) and getattr(w, 'focus', False):
-                                w.focus = False
-                                found = True
-                    except Exception:
-                        pass
-                    return found
-                # Check popups and overlays first
-                for child in list(Window.children):
-                    if unfocus_in_tree(child):
-                        return True
-                # Then check the app root
-                if self.root and unfocus_in_tree(self.root):
-                    return True
-                # If soft keyboard is visible, consume the back press
-                try:
-                    if getattr(Window, 'keyboard_height', 0) and Window.keyboard_height > 0:
-                        return True
-                except Exception:
-                    pass
-            except Exception:
-                # If anything goes wrong, do not block default behavior
-                return False
+            return self._consume_back_if_keyboard()
+        return False
+
+    def _on_key_down(self, window, key, scancode, codepoint, modifiers):
+        # Mirror handling here for back key on platforms that call on_key_down instead
+        if key in (27, 1001):
+            return self._consume_back_if_keyboard()
+        return False
+
+    def _on_request_close(self, *args, **kwargs):
+        # On Android, pressing back can request app close. If keyboard is up, close it instead.
+        if self._consume_back_if_keyboard():
+            return True  # prevent app close
         return False
 
     def on_pause(self):
