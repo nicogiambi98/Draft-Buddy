@@ -1,13 +1,61 @@
 # db.py
 import os
 import sqlite3
+import shutil
 
-DB_FILE = "events.db"
+try:
+    from kivy.app import App
+    from kivy.utils import platform
+except Exception:  # Allow importing outside Kivy (e.g., for tooling)
+    App = None
+    platform = None
+
+
+def _get_persistent_db_path(filename: str = "events.db") -> str:
+    """Return a path under a persistent app data directory.
+    - On Android/iOS: use Kivy's App.user_data_dir which survives app updates.
+    - Elsewhere: use a folder in the user's home directory.
+    Also performs a one-time seed: if no DB exists at the persistent
+    location but a bundled copy exists alongside this file, copy it.
+    """
+    # Determine base persistent dir
+    base_dir = None
+    if App is not None:
+        try:
+            app = App.get_running_app()
+        except Exception:
+            app = None
+        if app is not None:
+            try:
+                base_dir = app.user_data_dir
+            except Exception:
+                base_dir = None
+    if not base_dir:
+        # Fallback for desktop/tools when App isn't running
+        base_dir = os.path.join(os.path.expanduser("~"), ".draft_buddy")
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+    except Exception:
+        pass
+
+    target_path = os.path.join(base_dir, filename)
+
+    # One-time seed from bundled file if target doesn't exist
+    if not os.path.exists(target_path):
+        bundled_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+        try:
+            if os.path.exists(bundled_path):
+                shutil.copy2(bundled_path, target_path)
+        except Exception:
+            # Ignore seeding failures; we'll create an empty schema below
+            pass
+    return target_path
 
 
 def init_db():
-    need_init = not os.path.exists(DB_FILE)
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    db_path = _get_persistent_db_path()
+    need_init = not os.path.exists(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
     if need_init:
         c.execute("""CREATE TABLE players (

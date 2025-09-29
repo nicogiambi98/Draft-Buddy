@@ -5,9 +5,9 @@ package.domain = org.example
 version = 0.1.0
 
 source.dir = .
-source.include_exts = py,kv,png,jpg,jpeg,svg,db,wav,ogg,mp3,txt,json
-# Package assets and optional prebuilt DB
-source.include_patterns = assets/*, events.db
+source.include_exts = py,kv,png,jpg,jpeg,svg,wav,ogg,mp3,txt,json
+# Package assets (do not bundle the runtime DB)
+source.include_patterns = assets/*
 
 # Pin stack compatible with Cython 0.29.x
 requirements = python3,kivy==2.2.1,sqlite3,pyjnius==1.4.2,cython==0.29.36
