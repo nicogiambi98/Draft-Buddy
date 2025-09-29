@@ -7,6 +7,7 @@ import random
 import os
 import time
 from datetime import datetime
+import json
 
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
@@ -20,7 +21,7 @@ from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.audio import SoundLoader
 from pairing import get_name_for_event_player, compute_standings, generate_round_one, compute_next_round_pairings
-from timer import DraftTimer
+from timer import DraftTimer, IconButton
 from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.metrics import dp
@@ -1623,7 +1624,125 @@ class BingoScreen(Screen):
 
 
 class LifeTrackerScreen(Screen):
-    pass
+    top_life = NumericProperty(20)
+    bottom_life = NumericProperty(20)
+    default_life = NumericProperty(20)
+
+    def on_kv_post(self, base_widget):
+        # Load default from persistent storage and initialize counters if first time
+        try:
+            self._load_default()
+            # Initialize counters only the first time
+            if not hasattr(self, '_initialized'):
+                self.top_life = int(self.default_life)
+                self.bottom_life = int(self.default_life)
+                self._initialized = True
+        except Exception:
+            pass
+
+    # -------------- Persistence --------------
+    def _config_path(self):
+        try:
+            from db import _get_persistent_db_path
+            cfg = _get_persistent_db_path('lifetracker.json')
+            return cfg
+        except Exception:
+            # Fallback: home directory
+            try:
+                return os.path.join(os.path.expanduser('~'), '.draft_buddy', 'lifetracker.json')
+            except Exception:
+                return 'lifetracker.json'
+
+    def _load_default(self):
+        path = self._config_path()
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                val = int(data.get('default_life', 20))
+                if val <= 0:
+                    val = 20
+                self.default_life = val
+            else:
+                self.default_life = 20
+        except Exception:
+            self.default_life = 20
+
+    def _save_default(self):
+        path = self._config_path()
+        try:
+            d = os.path.dirname(path)
+            if d and not os.path.exists(d):
+                os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'default_life': int(self.default_life)}, f)
+        except Exception:
+            pass
+
+    # -------------- Actions --------------
+    def reset_counters(self):
+        try:
+            self.top_life = int(self.default_life)
+            self.bottom_life = int(self.default_life)
+            App.get_running_app().show_toast(f"Life reset to {self.default_life}")
+        except Exception:
+            self.top_life = self.bottom_life = 20
+
+    def inc_top(self):
+        self.top_life += 1
+
+    def dec_top(self):
+        self.top_life -= 1
+
+    def inc_bottom(self):
+        self.bottom_life += 1
+
+    def dec_bottom(self):
+        self.bottom_life -= 1
+
+    def open_settings_popup(self):
+        # Simple numeric input popup
+        try:
+            from kivy.uix.boxlayout import BoxLayout
+            from kivy.uix.textinput import TextInput
+            from kivy.uix.label import Label
+            from kivy.uix.button import Button
+            from kivy.uix.popup import Popup
+            from kivy.metrics import dp
+        except Exception:
+            return
+        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=[dp(10), 0, dp(10), dp(10)])
+        content.add_widget(Label(text='Starting life', size_hint_y=None, height=dp(24)))
+        ti = TextInput(text=str(int(self.default_life)), multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
+        content.add_widget(ti)
+        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        save_btn = Button(text='Save')
+        cancel_btn = Button(text='Cancel')
+        btns.add_widget(save_btn)
+        btns.add_widget(cancel_btn)
+        content.add_widget(btns)
+        popup = Popup(title='Life Tracker Settings', content=content, size_hint=(0.8, 0.2))
+
+        def _save(*_):
+            try:
+                v = int(ti.text.strip() or '20')
+                if v <= 0:
+                    v = 1
+                self.default_life = v
+                self._save_default()
+                app = App.get_running_app()
+                if app:
+                    app.show_toast(f"Default life set to {v}")
+            except Exception:
+                pass
+            popup.dismiss()
+
+        save_btn.bind(on_release=_save)
+        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
 
 
 class BottomNav(BoxLayout):
@@ -1741,6 +1860,28 @@ class DraftTimerScreen(Screen):
         # Do not auto-pause when leaving the screen; allow timer to continue running in background
         # This ensures switching pages does not stop the draft timer.
         return
+
+    # Controls API for kv IconButtons
+    def play_timer(self):
+        try:
+            if hasattr(self, '_timer_widget') and self._timer_widget:
+                self._timer_widget.start_sequence(None)
+        except Exception:
+            pass
+
+    def pause_timer(self):
+        try:
+            if hasattr(self, '_timer_widget') and self._timer_widget:
+                self._timer_widget.pause_timer(None)
+        except Exception:
+            pass
+
+    def reset_timer(self):
+        try:
+            if hasattr(self, '_timer_widget') and self._timer_widget:
+                self._timer_widget.reset_all(None)
+        except Exception:
+            pass
 
 
 # ----------------------

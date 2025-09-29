@@ -721,18 +721,147 @@
         BoxLayout:
             id: timer_container
             orientation: "vertical"
+        # Control bar with image icon buttons
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: dp(96)
+            spacing: dp(16)
+            padding: dp(12)
+            # Play
+            IconButton:
+                source: 'assets/play.png'
+                on_release: root.play_timer()
+                canvas.before:
+                    Color:
+                        rgba: 0.26, 0.26, 0.26, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(16),]
+            # Pause
+            IconButton:
+                source: 'assets/pause.png'
+                on_release: root.pause_timer()
+                canvas.before:
+                    Color:
+                        rgba: 0.26, 0.26, 0.26, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(16),]
+            # Reset
+            IconButton:
+                source: 'assets/reset.png'
+                on_release: root.reset_timer()
+                canvas.before:
+                    Color:
+                        rgba: 0.26, 0.26, 0.26, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(16),]
 
 
 <LifeTrackerScreen>:
-    BoxLayout:
-        orientation: "vertical"
-        padding: dp(10)
-        spacing: dp(8)
-        Label:
-            text: "Life Tracker (content coming soon)"
-            halign: 'center'
-            valign: 'middle'
-            text_size: self.size
+    # Full-screen FloatLayout to allow overlaying center buttons
+    FloatLayout:
+        # Two vertical halves for life counters
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 1, 1
+            # TOP half (rotated 180 degrees for opposite-facing user)
+            RelativeLayout:
+                # Big life label centered and rotated 180° (visual only)
+                Label:
+                    id: top_life_label
+                    text: str(root.top_life)
+                    font_size: self.height * 0.6
+                    bold: True
+                    color: 1,1,1,1
+                    halign: 'center'
+                    valign: 'middle'
+                    text_size: self.size
+                    canvas.before:
+                        PushMatrix
+                        Rotate:
+                            angle: 180
+                            origin: self.center
+                    canvas.after:
+                        PopMatrix
+                # Left/Right invisible tap zones (top: left=decrement, right=increment)
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint: 1, 1
+                    Button:
+                        background_normal: ''
+                        background_color: 0,0,0,0
+                        on_release: root.inc_top()
+                    Button:
+                        background_normal: ''
+                        background_color: 0,0,0,0
+                        on_release: root.dec_top()
+            # BOTTOM half (normal orientation)
+            RelativeLayout:
+                # Big life label centered
+                Label:
+                    id: bottom_life_label
+                    text: str(root.bottom_life)
+                    font_size: self.height * 0.6
+                    bold: True
+                    color: 1,1,1,1
+                    halign: 'center'
+                    valign: 'middle'
+                    text_size: self.size
+                # Left/Right invisible tap zones (bottom inverted: left=increment, right=decrement)
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint: 1, 1
+                    Button:
+                        background_normal: ''
+                        background_color: 0,0,0,0
+                        on_release: root.dec_bottom()
+                    Button:
+                        background_normal: ''
+                        background_color: 0,0,0,0
+                        on_release: root.inc_bottom()
+        # Center overlay buttons at 1/3 and 2/3 of width
+        # Reset Button (circular)
+        Button:
+            id: reset_btn
+            text: '\u27F3' if hasattr(app, 'theme') else 'Reset'
+            font_size: '22sp'
+            size_hint: None, None
+            size: dp(60), dp(60)
+            pos_hint: {'center_x': 0.3333, 'center_y': 0.5}
+            background_normal: ''
+            background_color: 0,0,0,0
+            on_release: root.reset_counters()
+            canvas.before:
+                Color:
+                    rgba: app.theme['primary'] if hasattr(app,'theme') else (0.16,0.47,0.96,1)
+                Ellipse:
+                    pos: self.x, self.y
+                    size: self.width, self.height
+            color: app.theme['on_primary'] if hasattr(app,'theme') else (1,1,1,1)
+        # Settings Button (circular)
+        Button:
+            id: settings_btn
+            text: '\u2699' if hasattr(app, 'theme') else 'Settings'
+            font_size: '22sp'
+            size_hint: None, None
+            size: dp(60), dp(60)
+            pos_hint: {'center_x': 0.6666, 'center_y': 0.5}
+            background_normal: ''
+            background_color: 0,0,0,0
+            on_release: root.open_settings_popup()
+            canvas.before:
+                Color:
+                    rgba: app.theme['surface'] if hasattr(app,'theme') else (0.95,0.95,0.95,1)
+                Ellipse:
+                    pos: self.x, self.y
+                    size: self.width, self.height
+            color: app.theme['on_surface'] if hasattr(app,'theme') else (0.1,0.1,0.1,1)
 
 
 # Toast component
