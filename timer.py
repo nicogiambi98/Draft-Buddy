@@ -5,6 +5,7 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
 from kivy.core.audio import SoundLoader
+from kivy.core.text import Label as CoreLabel
 import random
 import time
 
@@ -292,18 +293,17 @@ class DraftTimer(BoxLayout):
             t = t.strip()
             return len(t) > 0 and all(ch.isdigit() for ch in t)
 
-        def _fit_label_font(label: Label, max_w: float, max_h: float, max_px: float, min_px: float = 10.0):
-            # Iteratively reduce font size until the texture fits within max_w and max_h
-            size = max_px
-            # Guard against invalid sizes
-            if size <= 0:
-                size = 10.0
+        def _fit_label_font(label: Label, max_w: float, max_h: float, max_px: float, min_px: float = 10.0, measure_text: str = None):
+            # Iteratively reduce font size until the texture of measure_text (or label.text) fits within max_w and max_h
+            size = max_px if max_px and max_px > 0 else 10.0
             fitted = False
-            for _ in range(400):  # cap iterations (finer steps)
+            # Use CoreLabel to measure text without altering the visible widget text and avoid flicker
+            text_to_measure = measure_text if (measure_text is not None and len(measure_text) > 0) else label.text
+            for _ in range(500):  # cap iterations with fine steps
                 try:
-                    label.font_size = size
-                    label.texture_update()
-                    tw, th = label.texture_size
+                    cl = CoreLabel(text=text_to_measure, font_size=size)
+                    cl.refresh()
+                    tw, th = cl.texture.size if cl.texture else (0, 0)
                     if tw <= max_w and th <= max_h:
                         fitted = True
                         break
@@ -311,16 +311,13 @@ class DraftTimer(BoxLayout):
                     break
                 size -= 0.5  # finer decrement to avoid slight overflow
                 if size <= min_px:
-                    try:
-                        label.font_size = min_px
-                    except Exception:
-                        pass
+                    size = min_px
                     fitted = True
                     break
-            # Apply a tiny safety shrink to ensure we don't touch the edges due to rounding
+            # Apply a safety shrink to ensure we don't touch the edges due to rounding
             try:
                 if fitted:
-                    safe_size = max(min_px, size - 0.5)
+                    safe_size = max(min_px, size - 1.0)
                     label.font_size = safe_size
             except Exception:
                 pass
@@ -328,18 +325,18 @@ class DraftTimer(BoxLayout):
         def _refit_all(*_):
             # Available width is this widget width minus side margins and a tiny safety pad
             try:
-                margin = dp(12)
-                safe_pad_w = dp(2)
-                safe_pad_h = dp(1)
+                margin = dp(28)
+                safe_pad_w = dp(5)
+                safe_pad_h = dp(4)
             except Exception:
-                margin = 12
-                safe_pad_w = 2
-                safe_pad_h = 1
+                margin = 28
+                safe_pad_w = 5
+                safe_pad_h = 4
             max_w = max(0, self.width - 2 * margin - 2 * safe_pad_w)
             # Booster and Pick labels: fit within their own heights and available width
             for lbl in (self.booster_label, self.pick_label):
                 try:
-                    max_h = max(0, lbl.height * 0.95 - safe_pad_h)
+                    max_h = max(0, lbl.height * 0.90 - safe_pad_h)
                     # Start from a reasonable upper bound (in px)
                     max_px = max(12.0, min(sp(64), max_h))
                     _fit_label_font(lbl, max_w, max_h, max_px, min_px=sp(10))
@@ -348,13 +345,15 @@ class DraftTimer(BoxLayout):
             # Time label: if numeric, maximize; else fit like text
             try:
                 max_w_time = max(0, self.width - 2 * margin - 2 * safe_pad_w)
-                max_h_time = max(0, self.time_label.height * 0.95 - safe_pad_h)
+                max_h_time = max(0, self.time_label.height * 0.90 - safe_pad_h)
                 if _is_numeric_text(self.time_label.text):
                     # For numbers, allow a larger starting size (nearly fill height)
                     max_px = max(24.0, max_h_time)
+                    # Measure against widest two-digit string to avoid overflow on glyph changes
+                    _fit_label_font(self.time_label, max_w_time, max_h_time, max_px, min_px=sp(12), measure_text='88')
                 else:
                     max_px = max(24.0, min(sp(160), max_h_time))
-                _fit_label_font(self.time_label, max_w_time, max_h_time, max_px, min_px=sp(12))
+                    _fit_label_font(self.time_label, max_w_time, max_h_time, max_px, min_px=sp(12))
             except Exception:
                 pass
 

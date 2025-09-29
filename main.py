@@ -1724,7 +1724,7 @@ class LifeTrackerScreen(Screen):
         btns.add_widget(save_btn)
         btns.add_widget(cancel_btn)
         content.add_widget(btns)
-        popup = Popup(title='Life Tracker Settings', content=content, size_hint=(0.8, 0.2))
+        popup = Popup(title='Life Tracker Settings', content=content, size_hint=(0.8, 0.22))
 
         def _save(*_):
             try:
