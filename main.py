@@ -11,7 +11,7 @@ from datetime import datetime
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, NumericProperty, DictProperty
+from kivy.properties import StringProperty, ListProperty, NumericProperty, DictProperty, ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
@@ -610,6 +610,7 @@ class MatchRow(BoxLayout):
     score2 = NumericProperty(0)
     match_id = NumericProperty(0)
     bye = NumericProperty(0)
+    on_score_change = ObjectProperty(None, allownone=True)
 
     def cycle_score(self, side):
         # cycles 0 -> 1 -> 2 -> 0 and writes to DB
@@ -622,6 +623,12 @@ class MatchRow(BoxLayout):
             self.score2 = (self.score2 + 1) % 3
             DB.execute("UPDATE matches SET score_p2 = ? WHERE id = ?", (self.score2, self.match_id))
         DB.commit()
+        # Notify parent/screen that a score changed
+        try:
+            if self.on_score_change:
+                self.on_score_change(self)
+        except Exception:
+            pass
         # visually update (buttons bound to values)
 
 
@@ -1055,6 +1062,7 @@ class EventScreen(Screen):
         self.time_left = 0
         self._timer_round = 0
         self._end_sound_played = False
+        self.view_round = None  # if set, we are viewing a past (or specific) round without changing state
         # load sounds
         try:
             self.tick_sound = SoundLoader.load("assets/tick.wav")
@@ -1071,6 +1079,8 @@ class EventScreen(Screen):
 
     def load_event(self, event_id):
         self.event_id = event_id
+        # Reset viewing override on explicit load
+        self.view_round = None
         row = DB.execute("SELECT name, rounds, current_round, status FROM events WHERE id=?", (event_id,)).fetchone()
         if not row:
             return
@@ -1079,7 +1089,7 @@ class EventScreen(Screen):
         self.current_round = current_round
         # fetch round duration
         try:
-            rt = DB.execute("SELECT round_time FROM events WHERE id=?", (event_id,)).fetchone()
+            rt = DB.execute("SELECT round_time FROM events WHERE id= ?", (event_id,)).fetchone()
             self.round_duration = int(rt[0]) if rt and rt[0] is not None else 0
         except Exception:
             self.round_duration = 0
@@ -1088,16 +1098,23 @@ class EventScreen(Screen):
 
     def refresh_matches(self):
         self.ids.matches_grid.clear_widgets()
+        # Determine which round to display: a specific view_round or the current round (defaulting to 1)
+        round_to_show = None
+        try:
+            round_to_show = int(self.view_round) if getattr(self, 'view_round', None) else None
+        except Exception:
+            round_to_show = None
+        if not round_to_show:
+            round_to_show = self.current_round if self.current_round > 0 else 1
         cur = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?",
-                        (self.event_id, self.current_round if self.current_round>0 else 1))
+                        (self.event_id, round_to_show))
         rows = cur.fetchall()
-        if not rows:
-            # load round 1 if current_round is 0
-            if self.current_round == 0:
-                self.current_round = 1
-                DB.execute("UPDATE events SET current_round=? WHERE id=?", (1, self.event_id))
-                DB.commit()
-                rows = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?", (self.event_id,1)).fetchall()
+        if not rows and self.current_round == 0 and round_to_show == 1:
+            # initialize first round view if needed
+            self.current_round = 1
+            DB.execute("UPDATE events SET current_round=? WHERE id=?", (1, self.event_id))
+            DB.commit()
+            rows = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?", (self.event_id,1)).fetchall()
         for mid, rnd, p1, p2, s1, s2, bye in rows:
             p1name = get_name_for_event_player(self.event_id, p1)
             p2name = get_name_for_event_player(self.event_id, p2) if p2 else "BYE"
@@ -1108,10 +1125,17 @@ class EventScreen(Screen):
             row_widget.score2 = s2
             row_widget.match_id = mid
             row_widget.bye = bye
+            row_widget.on_score_change = lambda w, _self=self: _self._on_match_score_changed(w)
             self.ids.matches_grid.add_widget(row_widget)
-        # update round label
-        self.ids.round_label.text = f"Round: {self.current_round}"
-        # update next button label depending on last round
+        # update round label (mark if viewing a past round)
+        label = f"Round: {round_to_show}"
+        try:
+            if int(round_to_show) != int(self.current_round):
+                label += " (viewing)"
+        except Exception:
+            pass
+        self.ids.round_label.text = label
+        # update next button label depending on last round (based on actual current round)
         e = DB.execute("SELECT rounds FROM events WHERE id=?", (self.event_id,)).fetchone()
         if e:
             total_rounds = e[0]
@@ -1119,8 +1143,13 @@ class EventScreen(Screen):
                 self.ids.next_btn.text = "Finish Event"
             else:
                 self.ids.next_btn.text = "Next Round"
-        # start or reset the round timer when the round changes
-        self.maybe_start_timer()
+        # start or reset the round timer only if we are showing the actual current round
+        if getattr(self, 'view_round', None) is None or int(round_to_show) == int(self.current_round):
+            self.maybe_start_timer()
+        else:
+            # Stop timer display when viewing past round
+            self.stop_timer()
+            self.timer_text = "--:--"
 
     def _format_time(self, secs):
         try:
@@ -1212,6 +1241,70 @@ class EventScreen(Screen):
             return
         # Update label
         self.timer_text = self._format_time(self.time_left)
+
+    def _display_round(self):
+        try:
+            return int(self.view_round) if getattr(self, 'view_round', None) else int(self.current_round or 1)
+        except Exception:
+            return int(self.current_round or 1)
+
+    def show_round(self, round_number: int):
+        # Show a specific round without changing event state
+        try:
+            rn = int(round_number)
+        except Exception:
+            rn = self.current_round or 1
+        if rn < 1:
+            rn = 1
+        self.view_round = rn
+        self.refresh_matches()
+
+    def prev_round_view(self):
+        # Navigate to previous round view or to seating if at round 1
+        r = self._display_round()
+        if r <= 1:
+            # Go to seating screen for this event
+            try:
+                seat = self.manager.get_screen('seating')
+                seat.load_existing_event(self.event_id)
+                self.manager.current = 'seating'
+            except Exception:
+                # Fallback: just ignore
+                pass
+            return
+        self.view_round = r - 1
+        self.refresh_matches()
+
+    def _on_match_score_changed(self, row_widget: 'MatchRow'):
+        # Called after a score changes. If editing a past or closed event, purge future rounds and reactivate.
+        try:
+            edited_round = self._display_round()
+        except Exception:
+            edited_round = self.current_round or 1
+        # Read event status and current_round
+        ev = DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+        if not ev:
+            return
+        status, cur_round = ev
+        # If we edited a previous round or the event was closed, we must drop subsequent rounds and reactivate
+        need_reopen = (status == 'closed') or (edited_round < (cur_round or 0))
+        if need_reopen:
+            # Delete matches for rounds greater than edited_round
+            DB.execute("DELETE FROM matches WHERE event_id=? AND round>?", (self.event_id, edited_round))
+            now_ts = int(time.time())
+            DB.execute("UPDATE events SET status='active', current_round=?, round_start_ts=? WHERE id=?", (edited_round, now_ts, self.event_id))
+            DB.commit()
+            self.current_round = edited_round
+            self.view_round = None
+            # Notify user briefly
+            try:
+                App.get_running_app().show_toast("Updated past round. Future rounds cleared and event re-opened.")
+            except Exception:
+                pass
+            self.refresh_matches()
+        else:
+            # If editing the current round while viewing it, nothing else to do
+            pass
 
     def next_round(self):
         # Ensure current matches saved (they are updated live on clicks)
@@ -1361,8 +1454,54 @@ class SeatingScreen(Screen):
             cont.add_widget(Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1)))
 
     def confirm_and_begin(self):
-        # If event already exists (created when arriving to seating), just generate round one and go
+        # If event already exists (created when arriving to seating), handle per current state
         if getattr(self, 'event_id', 0):
+            # Read event state
+            status, cur_round = 'active', 0
+            try:
+                row = DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+                if row:
+                    status = row[0]
+                    cur_round = int(row[1] or 0)
+            except Exception:
+                pass
+            # Check if Round 1 already exists
+            round1_exists = False
+            try:
+                r = DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=? AND round=1", (self.event_id,)).fetchone()
+                round1_exists = bool(r and int(r[0]) > 0)
+            except Exception:
+                pass
+            # If user presses Begin Round 1 while event is in round 2+ or closed, revert to Round 1
+            if status == 'closed' or cur_round > 1:
+                if not round1_exists:
+                    # No Round 1 yet: generate it
+                    generate_round_one(self.event_id)
+                else:
+                    # Keep Round 1 results, wipe subsequent rounds and reactivate at Round 1
+                    try:
+                        DB.execute("DELETE FROM matches WHERE event_id=? AND round>1", (self.event_id,))
+                        now_ts = int(time.time())
+                        DB.execute("UPDATE events SET status='active', current_round=1, round_start_ts=? WHERE id=?", (now_ts, self.event_id))
+                        DB.commit()
+                    except Exception:
+                        pass
+                ev = self.manager.get_screen("event")
+                ev.load_event(self.event_id)
+                # Ensure round 1 is shown (view override does not change state)
+                try:
+                    ev.show_round(1)
+                except Exception:
+                    pass
+                self.manager.current = "event"
+                return
+            # Else: event not started or already at Round 1
+            if round1_exists:
+                # Avoid duplicating Round 1; just go to the event
+                self.manager.get_screen("event").load_event(self.event_id)
+                self.manager.current = "event"
+                return
+            # Generate Round 1 for a fresh event
             generate_round_one(self.event_id)
             self.manager.get_screen("event").load_event(self.event_id)
             self.manager.current = "event"
@@ -1383,6 +1522,26 @@ class StandingsScreen(Screen):
         title = row[0] if row else "Standings"
         self.ids.standings_title.text = f"{title} — Final Standings"
         self.refresh()
+
+    def back_to_last_round(self):
+        # Go back to the last round page from standings
+        # Determine last round that has matches
+        row = DB.execute("SELECT MAX(round) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+        last_round = int(row[0]) if row and row[0] is not None else 0
+        if last_round <= 0:
+            # If no rounds, go to seating (first round seating)
+            try:
+                seat = self.manager.get_screen('seating')
+                seat.load_existing_event(self.event_id)
+                self.manager.current = 'seating'
+            except Exception:
+                pass
+            return
+        # Load event screen and show last round without altering state
+        ev = self.manager.get_screen('event')
+        ev.load_event(self.event_id)
+        ev.show_round(last_round)
+        self.manager.current = 'event'
 
     def refresh(self):
         grid = self.ids.standings_grid

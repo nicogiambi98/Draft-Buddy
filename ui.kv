@@ -579,6 +579,9 @@
         BoxLayout:
             size_hint_y: None
             height: dp(56)
+            SecondaryButton:
+                text: "Previous Round"
+                on_release: root.prev_round_view()
             PrimaryButton:
                 id: next_btn
                 text: "Next Round"
@@ -687,6 +690,9 @@
         BoxLayout:
             size_hint_y: None
             height: dp(48)
+            Button:
+                text: "Back to Last Round"
+                on_release: root.back_to_last_round()
             Button:
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
