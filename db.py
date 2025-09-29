@@ -79,6 +79,7 @@ def init_db():
         c.execute("""CREATE TABLE players (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
                       name TEXT NOT NULL,
+                      nickname TEXT,
                       created_at TEXT DEFAULT CURRENT_TIMESTAMP
                      )""")
         c.execute("""CREATE TABLE events (
