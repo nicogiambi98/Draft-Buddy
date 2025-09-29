@@ -20,6 +20,7 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
     """
     # Determine base persistent dir
     base_dir = None
+    # Prefer Kivy App.user_data_dir when available (after App has started)
     if App is not None:
         try:
             app = App.get_running_app()
@@ -30,8 +31,25 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
                 base_dir = app.user_data_dir
             except Exception:
                 base_dir = None
+    # If still not decided and running on Android, use p4a-provided env vars
     if not base_dir:
-        # Fallback for desktop/tools when App isn't running
+        try:
+            plat = platform if platform is not None else None
+        except Exception:
+            plat = None
+        if plat == 'android':
+            # ANDROID_PRIVATE points to the app-internal files dir (persistent, no permissions needed)
+            base_dir = os.environ.get('ANDROID_PRIVATE')
+            if not base_dir:
+                # Fallback: ANDROID_ARGUMENT is the app dir; use its parent (files dir)
+                arg = os.environ.get('ANDROID_ARGUMENT')
+                if arg:
+                    base_dir = os.path.dirname(arg)
+        elif plat == 'ios':
+            # On iOS, expanduser("~") is safe and points to app sandbox
+            base_dir = os.path.expanduser('~')
+    # Final fallback for desktop/tools or unknown platforms
+    if not base_dir:
         base_dir = os.path.join(os.path.expanduser("~"), ".draft_buddy")
     try:
         os.makedirs(base_dir, exist_ok=True)
