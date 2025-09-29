@@ -392,7 +392,7 @@ class DraftTimer(BoxLayout):
         expert = [50, 50, 50, 40, 40, 30, 30, 20, 20, 10, 10, 5, 5]
         regular = [55, 55, 55, 45, 45, 35, 35, 25, 25, 10, 10, 5, 5]
         beginner = [60, 60, 60, 50, 50, 40, 40, 30, 30, 15, 15, 5, 5]
-        test = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        test = [1, 1, 1]
         return {
             "Expert": expert,
             "Regular": regular,
@@ -440,7 +440,7 @@ class DraftTimer(BoxLayout):
             self.timer_event = Clock.schedule_interval(self.update, 1)
             self.update(0)
         elif self.pick_index == len(seq):
-            # 1-minute build phase
+            # 1-minute pick review
             self.phase_duration = 60
             self.phase_start_ts = time.time()
             self.pick_index += 1
@@ -481,25 +481,25 @@ class DraftTimer(BoxLayout):
         if self.pick_index <= seq_len:
             return f"Pick {self.pick_index}"
         elif self.pick_index == seq_len + 1:
-            return "Build Phase"
+            return "Pick Review"
         return ""
 
     def _current_booster_iter(self):
         """Return the current Booster number (1..3).
         It should increment only after each full iteration of the picks array
-        (i.e., after the Build Phase completes), not per pick.
+        (i.e., after the Pick Review completes), not per pick.
         """
         try:
             # Before starting, show Booster 1
             if self.current_round <= 0:
                 return 1
-            # During picks and build phase of the current round, keep current_round
+            # During picks and pick review of the current round, keep current_round
             return self.current_round
         except Exception:
             return 1
 
     def _update_headers(self):
-        """Update Booster X and Pick Y/Build Phase labels."""
+        """Update Booster X and Pick Y/Pick Review labels."""
         try:
             booster = self._current_booster_iter()
             self.booster_label.text = f"Booster {booster}"
