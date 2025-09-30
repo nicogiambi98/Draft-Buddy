@@ -1513,6 +1513,29 @@ class SeatingScreen(Screen):
         self.manager.get_screen("event").load_event(self.event_id)
         self.manager.current = "event"
 
+    def close_event_reset(self):
+        # Close the event from seating: wipe all match results and set all players to 0 points, then mark closed
+        if not getattr(self, 'event_id', 0):
+            return
+        try:
+            # Remove all matches to guarantee standings show 0 points for everyone
+            DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
+            # Mark event closed and reset round counters
+            DB.execute("UPDATE events SET status='closed', current_round=0 WHERE id=?", (self.event_id,))
+            DB.commit()
+            try:
+                App.get_running_app().show_toast("Event closed. All results cleared.")
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # Navigate to standings (will show all players with 0 points)
+        try:
+            self.manager.get_screen('standings').show_for_event(self.event_id)
+            self.manager.current = 'standings'
+        except Exception:
+            pass
+
 
 class StandingsScreen(Screen):
     event_id = NumericProperty(0)
