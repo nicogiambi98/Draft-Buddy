@@ -611,7 +611,70 @@ class MatchRow(BoxLayout):
     score2 = NumericProperty(0)
     match_id = NumericProperty(0)
     bye = NumericProperty(0)
+    row_index = NumericProperty(0)
     on_score_change = ObjectProperty(None, allownone=True)
+
+    def get_bg(self):
+        try:
+            app = App.get_running_app()
+        except Exception:
+            app = None
+        try:
+            if app and hasattr(app, 'theme'):
+                s = app.theme.get('surface', (1, 1, 1))
+                # ensure we have 3 components
+                r, g, b = float(s[0]), float(s[1]), float(s[2])
+                if self.bye:
+                    # Make BYE rows clearly distinct with a soft, lighter tint
+                    return [min(r + 0.10, 1), min(g + 0.10, 1), min(b + 0.06, 1), 1]
+                if (int(self.row_index) % 2) == 0:
+                    return [r, g, b, 1]
+                else:
+                    return [max(r - 0.03, 0), max(g - 0.03, 0), max(b - 0.03, 0), 1]
+            else:
+                # Fallback light/alt rows; BYE gets a warm highlight
+                if self.bye:
+                    return [1.0, 0.97, 0.88, 1]
+                return [0.96, 0.96, 0.96, 1] if (int(self.row_index) % 2) == 0 else [0.92, 0.92, 0.92, 1]
+        except Exception:
+            return [1, 1, 1, 1]
+
+    def get_score_bg_rgba(self, disabled, state):
+        # Theme-aware blueish pill background for score buttons
+        try:
+            app = App.get_running_app()
+        except Exception:
+            app = None
+        try:
+            if disabled:
+                return [0.75, 0.75, 0.78, 0.35]
+            # Enabled state
+            alpha = 0.22 if state == 'normal' else 0.32
+            if app and hasattr(app, 'theme'):
+                p = app.theme.get('primary', (0.16, 0.47, 0.96))
+                r, g, b = float(p[0]), float(p[1]), float(p[2])
+                return [r, g, b, alpha]
+            # Fallback primary-ish blue
+            return [0.16, 0.47, 0.96, alpha]
+        except Exception:
+            return [0.16, 0.47, 0.96, 0.22]
+
+    def get_score_border_rgba(self, disabled):
+        # Subtle border matching the primary hue
+        try:
+            app = App.get_running_app()
+        except Exception:
+            app = None
+        try:
+            if disabled:
+                return [0.6, 0.6, 0.65, 0.45]
+            if app and hasattr(app, 'theme'):
+                p = app.theme.get('primary', (0.16, 0.47, 0.96))
+                r, g, b = float(p[0]), float(p[1]), float(p[2])
+                return [r, g, b, 0.45]
+            return [0.16, 0.47, 0.96, 0.45]
+        except Exception:
+            return [0.16, 0.47, 0.96, 0.45]
 
     def cycle_score(self, side):
         # cycles 0 -> 1 -> 2 -> 0 and writes to DB
@@ -624,6 +687,14 @@ class MatchRow(BoxLayout):
             self.score2 = (self.score2 + 1) % 3
             DB.execute("UPDATE matches SET score_p2 = ? WHERE id = ?", (self.score2, self.match_id))
         DB.commit()
+        # If both scores reach 2-2, reset to 0-0 (visual and DB)
+        try:
+            if int(self.score1) == 2 and int(self.score2) == 2:
+                self.score1, self.score2 = 0, 0
+                DB.execute("UPDATE matches SET score_p1 = 0, score_p2 = 0 WHERE id = ?", (self.match_id,))
+                DB.commit()
+        except Exception:
+            pass
         # Notify parent/screen that a score changed
         try:
             if self.on_score_change:
@@ -1116,7 +1187,7 @@ class EventScreen(Screen):
             DB.execute("UPDATE events SET current_round=? WHERE id=?", (1, self.event_id))
             DB.commit()
             rows = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?", (self.event_id,1)).fetchall()
-        for mid, rnd, p1, p2, s1, s2, bye in rows:
+        for idx, (mid, rnd, p1, p2, s1, s2, bye) in enumerate(rows):
             p1name = get_name_for_event_player(self.event_id, p1)
             p2name = get_name_for_event_player(self.event_id, p2) if p2 else "BYE"
             row_widget = MatchRow()
@@ -1126,6 +1197,7 @@ class EventScreen(Screen):
             row_widget.score2 = s2
             row_widget.match_id = mid
             row_widget.bye = bye
+            row_widget.row_index = idx
             row_widget.on_score_change = lambda w, _self=self: _self._on_match_score_changed(w)
             self.ids.matches_grid.add_widget(row_widget)
         # update round label (mark if viewing a past round)

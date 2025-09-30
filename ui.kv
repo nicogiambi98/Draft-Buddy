@@ -594,37 +594,46 @@
     size_hint_y: None
     height: dp(48)
     spacing: dp(8)
+    padding: dp(8), 0
     canvas.before:
+        # Alternating background rows with gentle bye tint
         Color:
-            rgba: (0.95,0.95,0.95,1) if self.bye else (1,1,1,1)
-        Rectangle:
-            pos: self.pos
-            size: self.size
+            rgba: root.get_bg()
+        RoundedRectangle:
+            pos: self.x, self.y
+            size: self.width, self.height
+            radius: [dp(10),]
+    canvas.after:
+        Color:
+            rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.12) if hasattr(app, 'theme') else (0,0,0,0.12)
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(10))
+            width: 1
     Label:
         text: root.p1_name
-        color: 0,0,0,1
-    Button:
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1))
+    PrimaryButton:
         id: p1btn
         text: str(root.score1)
         size_hint_x: None
         width: dp(60)
+        disabled: root.bye
         on_release: root.cycle_score(1)
-        color: 0,0,0,1
     Label:
         text: "-"
         size_hint_x: None
         width: dp(20)
-        color: 0,0,0,1
-    Button:
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1))
+    PrimaryButton:
         id: p2btn
         text: str(root.score2)
         size_hint_x: None
         width: dp(60)
+        disabled: root.bye
         on_release: root.cycle_score(2)
-        color: 0,0,0,1
     Label:
         text: root.p2_name
-        color: 0,0,0,1
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1)) if not root.bye else ((0.2,0.2,0.2,1) if not hasattr(app,'theme') else (app.theme['on_surface'][0]-0.25, app.theme['on_surface'][1]-0.25, app.theme['on_surface'][2]-0.25, 1))
 
 <SeatingScreen>:
     BoxLayout:
