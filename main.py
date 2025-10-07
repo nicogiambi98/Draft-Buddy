@@ -1873,14 +1873,22 @@ class BingoScreen(Screen):
         name = self.current_player_name or str(self.current_player_id)
         msg = f"Are you sure player {name} has completed this achievement:\n{ach_text}?"
         content = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
-        content.add_widget(Label(text=msg))
-        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        # Use a ScrollView with a wrapping Label so long text stays inside the popup
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True, bar_width=0)
+        lbl = Label(text=msg, halign='center', valign='top', size_hint_y=None)
+        # Wrap text to the available width; update height from texture
+        lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(8), None)))
+        lbl.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+        sv.add_widget(lbl)
+        content.add_widget(sv)
+        btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
         yes = Button(text='Yes')
         no = Button(text='No')
         btns.add_widget(yes)
         btns.add_widget(no)
         content.add_widget(btns)
-        popup = Popup(title='Confirm', content=content, size_hint=(0.8, 0.35))
+        popup = Popup(title='Confirm', content=content, size_hint=(0.9, 0.34), auto_dismiss=False)
         no.bind(on_release=lambda *_: popup.dismiss())
         def _do(*_):
             popup.dismiss()
