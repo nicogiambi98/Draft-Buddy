@@ -1,5 +1,6 @@
 #:import dp kivy.metrics.dp
 #:import SlideTransition kivy.uix.screenmanager.SlideTransition
+#:import Animation kivy.animation.Animation
 
 # Root container with fixed BottomNav and Toast overlay
 <Root@FloatLayout>:
@@ -31,6 +32,15 @@
 <CaptionLabel@Label>:
     font_size: '12sp'
     color: 0.6, 0.6, 0.6, 1
+
+# Global tactile feedback for all buttons
+<Button>:
+    on_press:
+        Animation.cancel_all(self, 'opacity')
+        Animation(opacity=0.85, d=0.08, t='out_quad').start(self)
+    on_release:
+        Animation.cancel_all(self, 'opacity')
+        Animation(opacity=1.0, d=0.12, t='out_quad').start(self)
 
 # Button styles
 <PrimaryButton@Button>:
