@@ -740,10 +740,25 @@
             height: dp(96)
             spacing: dp(16)
             padding: dp(12)
+            # Prev
+            IconButton:
+                source: 'assets/prev.png'
+                disabled: not root.can_prev
+                opacity: 0.4 if self.disabled else 1
+                on_release: root.prev_phase() if not self.disabled else None
+                canvas.before:
+                    Color:
+                        rgba: 0.26, 0.26, 0.26, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(16),]
             # Play
             IconButton:
                 source: 'assets/play.png'
-                on_release: root.play_timer()
+                disabled: not root.can_play
+                opacity: 0.4 if self.disabled else 1
+                on_release: root.play_timer() if not self.disabled else None
                 canvas.before:
                     Color:
                         rgba: 0.26, 0.26, 0.26, 1
@@ -754,7 +769,9 @@
             # Pause
             IconButton:
                 source: 'assets/pause.png'
-                on_release: root.pause_timer()
+                disabled: not root.can_pause
+                opacity: 0.4 if self.disabled else 1
+                on_release: root.pause_timer() if not self.disabled else None
                 canvas.before:
                     Color:
                         rgba: 0.26, 0.26, 0.26, 1
@@ -765,7 +782,22 @@
             # Reset
             IconButton:
                 source: 'assets/reset.png'
-                on_release: root.reset_timer()
+                disabled: not root.can_reset
+                opacity: 0.4 if self.disabled else 1
+                on_release: root.reset_timer() if not self.disabled else None
+                canvas.before:
+                    Color:
+                        rgba: 0.26, 0.26, 0.26, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(16),]
+            # Next
+            IconButton:
+                source: 'assets/next.png'
+                disabled: not root.can_next
+                opacity: 0.4 if self.disabled else 1
+                on_release: root.next_phase() if not self.disabled else None
                 canvas.before:
                     Color:
                         rgba: 0.26, 0.26, 0.26, 1

@@ -15,17 +15,9 @@ from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.image import Image
-try:
-    # Prefer SvgWidget which is a proper Widget that handles its own scaling
-    from kivy_garden.svg import SvgWidget as GardenSvgWidget
-except Exception:
-    GardenSvgWidget = None
 
-# Secondary fallback: canvas-based Svg instruction
-try:
-    from kivy_garden.svg import Svg as GardenSvgInstruction
-except Exception:
-    GardenSvgInstruction = None
+GardenSvgWidget = None
+GardenSvgInstruction = None
 
 class IconButton(ButtonBehavior, Widget):
     source = StringProperty('')
@@ -86,6 +78,10 @@ class IconButton(ButtonBehavior, Widget):
             return 'pause'
         if 'reset' in s or 'refresh' in s or 'reload' in s:
             return 'reset'
+        if 'prev' in s or 'back' in s or 'left' in s:
+            return 'prev'
+        if 'next' in s or 'forward' in s or 'right' in s:
+            return 'next'
         return 'play'
 
     def _reload_source(self, *args):
@@ -228,6 +224,13 @@ class IconButton(ButtonBehavior, Widget):
                 ah = radius * 0.28
                 # Small triangular arrow head
                 g.add(Triangle(points=[ax, ay, ax - ah * 0.9, ay + ah * 0.4, ax - ah * 0.1, ay + ah * 1.0]))
+            elif self._draw_kind == 'prev':
+                # Left-pointing chevron/triangle
+                # Use a narrower inner padding to make it bolder
+                g.add(Line(points=[r, b, l + (r - l) * 0.45, (b + t) / 2.0, r, t], width=2, cap='round', joint='round') )
+            elif self._draw_kind == 'next':
+                # Right-pointing chevron/triangle
+                g.add(Line(points=[l, b, r - (r - l) * 0.45, (b + t) / 2.0, l, t], width=2, cap='round', joint='round'))
             # Push to canvas.after so it sits above the grey background
             self._draw_group = g
             try:
@@ -245,6 +248,9 @@ class DraftTimer(BoxLayout):
         self.pick_index = 0
         self.paused = False
         self.paused_remaining = None  # stores remaining seconds when user pauses
+
+        # Sound suppression window (epoch seconds). When now < suppress_until, no tick/animal sounds.
+        self.suppress_until = 0
 
         # Phase timing (wall-clock based)
         self.phase_start_ts = 0  # epoch seconds when current phase started
@@ -357,9 +363,11 @@ class DraftTimer(BoxLayout):
             except Exception:
                 pass
 
-        # Bind refit on size and text changes
+        # Expose refit so other methods can call it without rebinding
+        self._refit_all = _refit_all
+        # Bind refit on size changes only (avoid per-second refit on numeric text updates)
         self.bind(size=_refit_all)
-        self.time_label.bind(size=_refit_all, text=_refit_all)
+        self.time_label.bind(size=_refit_all)
         # Booster and Pick labels should also trigger refit on their changes
         self.booster_label.bind(size=_refit_all, text=_refit_all)
         self.pick_label.bind(size=_refit_all, text=_refit_all)
@@ -381,6 +389,11 @@ class DraftTimer(BoxLayout):
             self.spinner.height = 36
         self.spinner.bind(text=self.set_mode)
         self.add_widget(self.spinner)
+        # Initialize spinner state (enabled on waiting page)
+        try:
+            self._update_spinner_state()
+        except Exception:
+            pass
         # Controls moved to kv: DraftTimerScreen now provides Play/Pause/Reset buttons
 
     def set_mode(self, spinner, text):
@@ -389,7 +402,7 @@ class DraftTimer(BoxLayout):
         self.reset_all(None)
 
     def get_sequences(self):
-        expert = [50, 50, 50, 40, 40, 30, 30, 20, 20, 10, 10, 5, 5]
+        expert = [50, 50, 45, 45, 40, 35, 30, 25, 20, 15, 10, 5, 5]
         regular = [55, 55, 55, 45, 45, 35, 35, 25, 25, 10, 10, 5, 5]
         beginner = [60, 60, 60, 50, 50, 40, 40, 30, 30, 15, 15, 5, 5]
         test = [1, 1, 1]
@@ -404,6 +417,11 @@ class DraftTimer(BoxLayout):
         # Start or resume sequence
         if self.timer_event:
             return
+        # Ensure spinner reflects non-waiting state when resuming
+        try:
+            self._update_spinner_state()
+        except Exception:
+            pass
         if self.current_round > 0 and self.paused and self.phase_duration > 0:
             # Resume current phase from the exact paused remaining value
             remaining = self.paused_remaining if self.paused_remaining is not None else self.get_remaining()
@@ -428,6 +446,11 @@ class DraftTimer(BoxLayout):
         self.start_next_timer()
 
     def start_next_timer(self, dt=None):
+        # Ensure spinner dimmed while a timer phase is active
+        try:
+            self._update_spinner_state()
+        except Exception:
+            pass
         seq = self.sequences[self.mode]
         if self.pick_index < len(seq):
             # Pick timer
@@ -519,6 +542,18 @@ class DraftTimer(BoxLayout):
                 pass
             self.timer_event = None
 
+    def _update_spinner_state(self):
+        try:
+            waiting = (self.current_round <= 0)
+            if hasattr(self, 'spinner') and self.spinner is not None:
+                self.spinner.disabled = not waiting
+                try:
+                    self.spinner.opacity = 0.4 if not waiting else 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def on_app_resume(self):
         # If not paused and a phase was running, reschedule updates
         if self.current_round > 0 and not self.paused and self.phase_duration > 0 and self.timer_event is None:
@@ -527,8 +562,9 @@ class DraftTimer(BoxLayout):
 
     def update(self, dt):
         remaining = self.get_remaining()
-        # Tick for last 3 seconds
-        if remaining in (1, 2, 3) and self.tick_sound:
+        # Tick for last 3 seconds (unless suppressed)
+        now = time.time()
+        if remaining in (1, 2, 3) and self.tick_sound and now >= self.suppress_until:
             try:
                 self.tick_sound.play()
             except Exception:
@@ -542,7 +578,9 @@ class DraftTimer(BoxLayout):
             return
         # Phase complete
         self._cancel_schedule()
-        self.play_animal_sound()
+        # Only play sound if not within suppression window
+        if time.time() >= self.suppress_until:
+            self.play_animal_sound()
         Clock.schedule_once(self.start_next_timer, 2)  # 2-second break
 
     def play_animal_sound(self):
@@ -551,17 +589,138 @@ class DraftTimer(BoxLayout):
             if sound:
                 sound.play()
 
+    # ---- Manual navigation helpers (prev/next) ----
+    def _current_phase_info(self):
+        """Return a tuple (kind, index) where kind is 'pick', 'review', or 'none'.
+        For 'pick', index is zero-based within the sequence. For 'review', index is None.
+        """
+        try:
+            if self.current_round <= 0 or self.pick_index <= 0:
+                return ('none', None)
+            seq_len = len(self.sequences[self.mode])
+            if 1 <= self.pick_index <= seq_len:
+                return ('pick', self.pick_index - 1)
+            if self.pick_index == seq_len + 1:
+                return ('review', None)
+            return ('none', None)
+        except Exception:
+            return ('none', None)
+
+    def has_prev_phase(self):
+        kind, idx = self._current_phase_info()
+        if kind == 'pick':
+            if idx > 0:
+                return True
+            # idx == 0 -> previous round's review if exists
+            return self.current_round > 1
+        if kind == 'review':
+            return True  # previous is last pick of this round
+        return False
+
+    def has_next_phase(self):
+        if self.current_round <= 0:
+            return False
+        seq_len = len(self.sequences[self.mode])
+        kind, idx = self._current_phase_info()
+        if kind == 'pick':
+            # next pick or review always exists within a round
+            return True
+        if kind == 'review':
+            # next is next round if available
+            return self.current_round < 3
+        return False
+
+    def _start_phase_by_upcoming_index(self, up_idx: int):
+        """Start a phase immediately given its 'upcoming index'.
+        up_idx in [0..len(seq)-1] -> picks; up_idx == len(seq) -> review.
+        """
+        try:
+            self._cancel_schedule()
+        except Exception:
+            pass
+        self.paused = False
+        self.paused_remaining = None
+        seq = self.sequences[self.mode]
+        if up_idx < len(seq):
+            self.phase_duration = int(seq[up_idx])
+        else:
+            self.phase_duration = 60  # review
+        self.phase_start_ts = time.time()
+        # As in start_next_timer, set pick_index to reflect started phase (human 1-based picks, review = len+1)
+        self.pick_index = min(up_idx + 1, len(seq) + 1)
+        # Update headers and time
+        try:
+            self._update_headers()
+            self.time_label.text = str(self.phase_duration)
+        except Exception:
+            pass
+        # Suppress immediate sounds caused by manual navigation
+        try:
+            self.suppress_until = time.time() + 1.0
+        except Exception:
+            self.suppress_until = 0
+        # Schedule ticking
+        self.timer_event = Clock.schedule_interval(self.update, 1)
+        self.update(0)
+
+    def go_next_phase(self):
+        # Handle starting if not started yet
+        if self.current_round <= 0:
+            self.current_round = 1
+            self._start_phase_by_upcoming_index(0)
+            return
+        kind, idx = self._current_phase_info()
+        seq_len = len(self.sequences[self.mode])
+        if kind == 'pick':
+            if idx + 1 < seq_len:
+                self._start_phase_by_upcoming_index(idx + 1)
+            else:
+                # move to review
+                self._start_phase_by_upcoming_index(seq_len)
+        elif kind == 'review':
+            if self.current_round < 3:
+                self.current_round += 1
+                self._start_phase_by_upcoming_index(0)
+            else:
+                # Already at final review; do nothing
+                return
+
+    def go_prev_phase(self):
+        if self.current_round <= 0:
+            return
+        kind, idx = self._current_phase_info()
+        seq_len = len(self.sequences[self.mode])
+        if kind == 'pick':
+            if idx > 0:
+                self._start_phase_by_upcoming_index(idx - 1)
+            else:
+                # First pick of round -> go to previous round's review if any
+                if self.current_round > 1:
+                    self.current_round -= 1
+                    self._start_phase_by_upcoming_index(seq_len)
+        elif kind == 'review':
+            # Go to last pick of this round
+            if seq_len > 0:
+                self._start_phase_by_upcoming_index(seq_len - 1)
+
     def pause_timer(self, instance):
         # User-initiated pause: freeze remaining time exactly as seen
         self.paused_remaining = self.get_remaining()
         self.paused = True
         self._cancel_schedule()
+        try:
+            self._update_spinner_state()
+        except Exception:
+            pass
 
     def reset_all(self, instance):
         # Full reset of the timer state
         self._cancel_schedule()
         try:
             self.time_label.text = "Ready"
+            # Refit once for non-numeric label to avoid stale font sizing
+            if hasattr(self, '_refit_all') and callable(self._refit_all):
+                self._refit_all()
         except Exception:
             pass
         self.time_left = 0
@@ -575,6 +734,11 @@ class DraftTimer(BoxLayout):
         try:
             self.booster_label.text = "Booster 1"
             self.pick_label.text = ""
+        except Exception:
+            pass
+        # Return spinner to enabled (waiting) state
+        try:
+            self._update_spinner_state()
         except Exception:
             pass
 

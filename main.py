@@ -1940,6 +1940,57 @@ class BottomNav(BoxLayout):
 
 
 class DraftTimerScreen(Screen):
+    from kivy.properties import BooleanProperty
+    can_play = BooleanProperty(True)
+    can_pause = BooleanProperty(False)
+    can_reset = BooleanProperty(False)
+    can_prev = BooleanProperty(False)
+    can_next = BooleanProperty(False)
+
+    def _recompute_controls(self, *_):
+        try:
+            tw = getattr(self, '_timer_widget', None)
+            if not tw:
+                self.can_play = True
+                self.can_pause = False
+                self.can_reset = False
+                self.can_prev = False
+                self.can_next = False
+                return
+            # Determine states
+            initial = (tw.current_round <= 0)
+            running = (tw.timer_event is not None) and (not tw.paused)
+            paused = bool(tw.paused)
+            # Controls logic
+            if initial:
+                self.can_play = True
+                self.can_pause = False
+                self.can_reset = False
+            elif paused:
+                self.can_play = True
+                self.can_pause = False
+                self.can_reset = True
+            else:
+                # running or between-phase short break
+                self.can_play = False
+                self.can_pause = True
+                self.can_reset = True
+            # Prev/Next availability based on timer's ability to move
+            try:
+                self.can_prev = bool(tw.has_prev_phase())
+            except Exception:
+                self.can_prev = False
+            try:
+                self.can_next = bool(tw.has_next_phase())
+            except Exception:
+                self.can_next = False
+        except Exception:
+            self.can_play = True
+            self.can_pause = False
+            self.can_reset = False
+            self.can_prev = False
+            self.can_next = False
+
     def on_enter(self):
         cont = getattr(self, 'ids', {}).get('timer_container')
         if cont is not None:
@@ -1950,11 +2001,22 @@ class DraftTimerScreen(Screen):
                     self._timer_widget = Label(text="Draft Timer failed to load", color=(1,1,1,1))
             cont.clear_widgets()
             cont.add_widget(self._timer_widget)
+        # Start polling control state while on this screen
+        try:
+            if not hasattr(self, '_ctrl_ev') or self._ctrl_ev is None:
+                self._ctrl_ev = Clock.schedule_interval(self._recompute_controls, 0.2)
+        except Exception:
+            pass
+        self._recompute_controls()
 
     def on_leave(self):
-        # Do not auto-pause when leaving the screen; allow timer to continue running in background
-        # This ensures switching pages does not stop the draft timer.
-        return
+        # Keep timer running in background, but stop polling UI state
+        try:
+            if hasattr(self, '_ctrl_ev') and self._ctrl_ev is not None:
+                self._ctrl_ev.cancel()
+        except Exception:
+            pass
+        self._ctrl_ev = None
 
     # Controls API for kv IconButtons
     def play_timer(self):
@@ -1963,6 +2025,7 @@ class DraftTimerScreen(Screen):
                 self._timer_widget.start_sequence(None)
         except Exception:
             pass
+        self._recompute_controls()
 
     def pause_timer(self):
         try:
@@ -1970,6 +2033,7 @@ class DraftTimerScreen(Screen):
                 self._timer_widget.pause_timer(None)
         except Exception:
             pass
+        self._recompute_controls()
 
     def reset_timer(self):
         try:
@@ -1977,6 +2041,23 @@ class DraftTimerScreen(Screen):
                 self._timer_widget.reset_all(None)
         except Exception:
             pass
+        self._recompute_controls()
+
+    def next_phase(self):
+        try:
+            if hasattr(self, '_timer_widget') and self._timer_widget:
+                self._timer_widget.go_next_phase()
+        except Exception:
+            pass
+        self._recompute_controls()
+
+    def prev_phase(self):
+        try:
+            if hasattr(self, '_timer_widget') and self._timer_widget:
+                self._timer_widget.go_prev_phase()
+        except Exception:
+            pass
+        self._recompute_controls()
 
 
 # ----------------------
