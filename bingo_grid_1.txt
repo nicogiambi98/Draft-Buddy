@@ -1,0 +1,9 @@
+Win a match with a five-color deck
+Win a match after mulliganing to five or less
+Win a match with 5 or fewer creatures in your main deck
+Win a match after casting the same spell at least 3 times
+Win an event
+Win a match without playing any rare or mythic cards
+Win a match while ending the game at 30+ life
+Win a match with a monocolored deck
+Win a match without reducing your opponent to 0 life (mill, poison, alt wincon)

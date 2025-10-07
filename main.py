@@ -1715,7 +1715,405 @@ class LeagueScreen(Screen):
 
 
 class BingoScreen(Screen):
-    pass
+    current_player_id = NumericProperty(0)
+    current_player_name = StringProperty("")
+    status_text = StringProperty("")
+    achievements = ListProperty([])  # 9 texts
+    # state: { str(player_id): [bool]*9 }
+    bingo_state = DictProperty({})
+    # taken lines and winners
+    taken = DictProperty({})  # {'rows':[bool]*3,'cols':[bool]*3,'diags':[bool]*2,'full': bool}
+    winners = DictProperty({})  # {'rows':[pid or None]*3,...,'full': pid or None}
+
+    def on_kv_post(self, base_widget):
+        # Load data
+        self._ensure_achievements()
+        self._load_state()
+        self._load_players()
+        self._render_players_list()
+        self._select_default_player()
+        self._render_grid()
+        self._update_status()
+
+    # ---- Paths and persistence ----
+    def _achievements_path(self):
+        # Always read the bundled project file so user edits to achievements.json are reflected
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'achievements.json')
+
+    def _state_path(self):
+        try:
+            from db import _get_persistent_db_path
+            return _get_persistent_db_path('bingo_state.json')
+        except Exception:
+            return os.path.join(os.path.expanduser('~'), '.draft_buddy', 'bingo_state.json')
+
+    def _ensure_achievements(self):
+        path = self._achievements_path()
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                arr = data.get('achievements') or []
+                if not isinstance(arr, list) or len(arr) != 9:
+                    arr = [f"Achievement {i+1}" for i in range(9)]
+                self.achievements = arr
+            else:
+                self.achievements = [f"Achievement {i+1}" for i in range(9)]
+        except Exception:
+            self.achievements = [f"Achievement {i+1}" for i in range(9)]
+
+    def _load_state(self):
+        path = self._state_path()
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                self.bingo_state = data.get('players', {})
+                self.taken = data.get('taken', {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False})
+                self.winners = data.get('winners', {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None})
+            else:
+                self.bingo_state = {}
+                self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+                self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+        except Exception:
+            self.bingo_state = {}
+            self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+            self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+
+    def _save_state(self):
+        path = self._state_path()
+        try:
+            d = os.path.dirname(path)
+            if d and not os.path.exists(d):
+                os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'players': self.bingo_state, 'taken': self.taken, 'winners': self.winners}, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # ---- Players ----
+    def _load_players(self):
+        self._players = []
+        try:
+            from db import DB
+            c = DB.cursor()
+            rows = c.execute("SELECT id, COALESCE(nickname, name) as n FROM players ORDER BY n COLLATE NOCASE").fetchall()
+            for pid, name in rows:
+                self._players.append({'id': int(pid), 'name': name})
+        except Exception:
+            pass
+
+    def _render_players_list(self):
+        cont = self.ids.get('players_grid') or self.ids.get('players_list')
+        if not cont:
+            return
+        cont.clear_widgets()
+        for p in self._players:
+            btn = Button(text=p['name'], size_hint_y=None, height=dp(42))
+            def _mk_select(_pid=p['id'], _pname=p['name']):
+                return lambda *_: self.select_player(_pid, _pname)
+            btn.bind(on_release=_mk_select())
+            cont.add_widget(btn)
+
+    def _select_default_player(self):
+        if self.current_player_id:
+            return
+        if self._players:
+            p = self._players[0]
+            self.select_player(p['id'], p['name'])
+
+    def select_player(self, pid, name):
+        self.current_player_id = int(pid)
+        self.current_player_name = name
+        # Ensure player state exists
+        key = str(self.current_player_id)
+        if key not in self.bingo_state:
+            self.bingo_state[key] = [False]*9
+            self._save_state()
+        # Update UI
+        self._render_grid()
+        self._update_status()
+
+    # ---- Grid ----
+    def _render_grid(self):
+        grid = self.ids.get('bingo_grid')
+        if not grid:
+            return
+        grid.clear_widgets()
+        # Create 9 buttons (larger); completed cells disabled
+        for idx in range(9):
+            done = False
+            try:
+                done = bool(self.bingo_state.get(str(self.current_player_id), [False]*9)[idx])
+            except Exception:
+                done = False
+            txt = self.achievements[idx] if idx < len(self.achievements) else f"#{idx+1}"
+            btn = Button(text=txt, halign='center', valign='middle')
+            btn.text_size = (None, None)
+            btn.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(8), inst.height - dp(8))))
+            btn.size_hint_y = None
+            btn.height = dp(120)
+            btn.background_normal = ''
+            btn.background_down = ''
+            btn.disabled = done
+            # Color: green if done, dark gray otherwise; lighten when disabled handled by kv default
+            btn.background_color = (0.16,0.64,0.28,1) if done else (0.26,0.26,0.26,1)
+            if not done:
+                def _on_press(_i=idx, _txt=txt):
+                    return lambda *_: self._confirm_mark(_i, _txt)
+                btn.bind(on_release=_on_press())
+            grid.add_widget(btn)
+
+    def _confirm_mark(self, idx, ach_text):
+        if not self.current_player_id:
+            return
+        name = self.current_player_name or str(self.current_player_id)
+        msg = f"Are you sure player {name} has completed this achievement:\n{ach_text}?"
+        content = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
+        content.add_widget(Label(text=msg))
+        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        yes = Button(text='Yes')
+        no = Button(text='No')
+        btns.add_widget(yes)
+        btns.add_widget(no)
+        content.add_widget(btns)
+        popup = Popup(title='Confirm', content=content, size_hint=(0.8, 0.35))
+        no.bind(on_release=lambda *_: popup.dismiss())
+        def _do(*_):
+            popup.dismiss()
+            self._mark_done(idx)
+        yes.bind(on_release=_do)
+        popup.open()
+
+    def _mark_done(self, idx):
+        key = str(self.current_player_id)
+        arr = list(self.bingo_state.get(key, [False]*9))
+        if idx < 0 or idx >= 9:
+            return
+        if arr[idx]:
+            # already done
+            return
+        arr[idx] = True
+        self.bingo_state[key] = arr
+        self._save_state()
+        self._render_grid()
+        # After marking, check winnings
+        self._check_wins()
+        self._update_status()
+
+    # ---- Win logic ----
+    def _check_wins(self):
+        pid = self.current_player_id
+        key = str(pid)
+        arr = self.bingo_state.get(key, [False]*9)
+        # Lines definitions
+        lines = {
+            ('row', 0): [0,1,2],
+            ('row', 1): [3,4,5],
+            ('row', 2): [6,7,8],
+            ('col', 0): [0,3,6],
+            ('col', 1): [1,4,7],
+            ('col', 2): [2,5,8],
+            ('diag', 0): [0,4,8],
+            ('diag', 1): [2,4,6],
+        }
+        took_any = False
+        for (typ, i), cells in lines.items():
+            completed = all(arr[c] for c in cells)
+            if not completed:
+                continue
+            if typ == 'row':
+                if not self.taken['rows'][i]:
+                    self.taken['rows'][i] = True
+                    self.winners['rows'][i] = pid
+                    took_any = True
+                    self._announce_winner(f"{self.current_player_name} won row {i+1}!")
+            elif typ == 'col':
+                if not self.taken['cols'][i]:
+                    self.taken['cols'][i] = True
+                    self.winners['cols'][i] = pid
+                    took_any = True
+                    self._announce_winner(f"{self.current_player_name} won column {i+1}!")
+            elif typ == 'diag':
+                if not self.taken['diags'][i]:
+                    self.taken['diags'][i] = True
+                    self.winners['diags'][i] = pid
+                    took_any = True
+                    name = 'main diagonal' if i == 0 else 'anti-diagonal'
+                    self._announce_winner(f"{self.current_player_name} won the {name}!")
+        # Full grid
+        if all(arr):
+            if not self.taken.get('full'):
+                self.taken['full'] = True
+                self.winners['full'] = pid
+                took_any = True
+                self._announce_winner(f"{self.current_player_name} completed the whole grid!")
+        if took_any:
+            self._save_state()
+
+    def _announce_winner(self, message):
+        # Always show a popup to announce first completions; also try to show a toast
+        try:
+            Popup(title='Bingo', content=Label(text=message), size_hint=(0.7, 0.25)).open()
+        except Exception:
+            pass
+        app = App.get_running_app()
+        if app:
+            try:
+                app.show_toast(message, timeout=3.0)
+            except Exception:
+                pass
+
+    def _update_status(self):
+        # Build a small summary text
+        parts = []
+        try:
+            def _nm(pid):
+                if pid is None:
+                    return None
+                for p in self._players:
+                    if p['id'] == pid:
+                        return p['name']
+                return f"#{pid}"
+            rows = [(_nm(p), t) for p, t in zip(self.winners.get('rows', [None]*3), self.taken.get('rows', [False]*3))]
+            cols = [(_nm(p), t) for p, t in zip(self.winners.get('cols', [None]*3), self.taken.get('cols', [False]*3))]
+            diags = [(_nm(p), t) for p, t in zip(self.winners.get('diags', [None]*2), self.taken.get('diags', [False]*2))]
+            if any(t for _, t in rows):
+                s = ", ".join([f"{i+1}:{n}" for i,(n,t) in enumerate(rows) if t and n])
+                parts.append(f"Rows: {s}")
+            if any(t for _, t in cols):
+                s = ", ".join([f"{i+1}:{n}" for i,(n,t) in enumerate(cols) if t and n])
+                parts.append(f"Cols: {s}")
+            if any(t for _, t in diags):
+                s = ", ".join([f"{('D1' if i==0 else 'D2')}:{n}" for i,(n,t) in enumerate(diags) if t and n])
+                parts.append(f"Diags: {s}")
+            if self.taken.get('full'):
+                nm = _nm(self.winners.get('full'))
+                parts.append(f"Full grid: {nm}")
+        except Exception:
+            pass
+        self.status_text = "  |  ".join(parts) if parts else ""
+
+    # ---- Actions exposed to KV ----
+    def open_completed_popup(self):
+        # Read-only summary with a visual mark for completed lines and list of winners
+        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(12))
+        # Grid with achievements labels; color cells that belong to completed lines/diags
+        gl = GridLayout(cols=3, rows=3, spacing=dp(6), size_hint_y=None)
+        gl.bind(minimum_height=lambda inst, val: setattr(inst, 'height', val))
+        # Determine which indices are part of completed lines
+        taken = self.taken or {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+        completed_indices = set()
+        lines = {
+            ('row', 0): [0,1,2],
+            ('row', 1): [3,4,5],
+            ('row', 2): [6,7,8],
+            ('col', 0): [0,3,6],
+            ('col', 1): [1,4,7],
+            ('col', 2): [2,5,8],
+            ('diag', 0): [0,4,8],
+            ('diag', 1): [2,4,6],
+        }
+        for i in range(3):
+            if taken.get('rows', [False]*3)[i]:
+                completed_indices.update(lines[('row', i)])
+            if taken.get('cols', [False]*3)[i]:
+                completed_indices.update(lines[('col', i)])
+        for i in range(2):
+            if taken.get('diags', [False]*2)[i]:
+                completed_indices.update(lines[('diag', i)])
+        # Build the grid labels
+        for idx in range(9):
+            txt = self.achievements[idx] if idx < len(self.achievements) else f"#{idx+1}"
+            lbl = Label(text=txt, halign='center', valign='middle')
+            lbl.text_size = (None, None)
+            lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(8), inst.height - dp(8))))
+            lbl.size_hint_y = None
+            lbl.height = dp(90)
+            # Color background via canvas
+            def _add_bg(widget, taken_here):
+                from kivy.graphics import Color, Rectangle
+                with widget.canvas.before:
+                    if taken_here:
+                        Color(0.16, 0.64, 0.28, 0.35)
+                    else:
+                        Color(0.2, 0.2, 0.2, 0.2)
+                    widget._bg_rect = Rectangle(pos=widget.pos, size=widget.size)
+                widget.bind(pos=lambda w, v: setattr(widget._bg_rect, 'pos', v))
+                widget.bind(size=lambda w, v: setattr(widget._bg_rect, 'size', v))
+            _add_bg(lbl, idx in completed_indices)
+            gl.add_widget(lbl)
+        content.add_widget(gl)
+        # Winners list
+        def _nm(pid):
+            if pid is None:
+                return None
+            for p in getattr(self, '_players', []):
+                if p['id'] == pid:
+                    return p['name']
+            return f"#{pid}"
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, 1))
+        info = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(4))
+        info.bind(minimum_height=lambda inst, val: setattr(inst, 'height', val))
+        # Rows
+        for i in range(3):
+            if taken.get('rows', [False]*3)[i]:
+                nm = _nm((self.winners or {}).get('rows', [None]*3)[i])
+                info.add_widget(Label(text=f"Row {i+1}: {nm}", size_hint_y=None, height=dp(24)))
+        # Cols
+        for i in range(3):
+            if taken.get('cols', [False]*3)[i]:
+                nm = _nm((self.winners or {}).get('cols', [None]*3)[i])
+                info.add_widget(Label(text=f"Column {i+1}: {nm}", size_hint_y=None, height=dp(24)))
+        # Diags
+        for i in range(2):
+            if taken.get('diags', [False]*2)[i]:
+                name = 'Main diagonal' if i == 0 else 'Anti-diagonal'
+                nm = _nm((self.winners or {}).get('diags', [None]*2)[i])
+                info.add_widget(Label(text=f"{name}: {nm}", size_hint_y=None, height=dp(24)))
+        # Full grid
+        if taken.get('full'):
+            nm = _nm((self.winners or {}).get('full'))
+            info.add_widget(Label(text=f"Full grid: {nm}", size_hint_y=None, height=dp(24)))
+        if len(info.children) == 0:
+            info.add_widget(Label(text="No completed achievements yet.", size_hint_y=None, height=dp(24)))
+        sv.add_widget(info)
+        content.add_widget(sv)
+        # Buttons
+        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        close = Button(text='Close')
+        btns.add_widget(close)
+        content.add_widget(btns)
+        popup = Popup(title='Completed Achievements', content=content, size_hint=(0.9, 0.9))
+        close.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
+
+    def reset_progress(self):
+        # Confirm
+        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
+        content.add_widget(Label(text='Reset all bingo progresses? This cannot be undone.'))
+        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        yes = Button(text='Yes')
+        no = Button(text='No')
+        btns.add_widget(yes)
+        btns.add_widget(no)
+        content.add_widget(btns)
+        popup = Popup(title='Confirm Reset', content=content, size_hint=(0.8, 0.3))
+        no.bind(on_release=lambda *_: popup.dismiss())
+        def _do(*_):
+            popup.dismiss()
+            self.bingo_state = {}
+            self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+            self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+            self._save_state()
+            self._render_grid()
+            self._update_status()
+        yes.bind(on_release=_do)
+        popup.open()
 
 
 class LifeTrackerScreen(Screen):

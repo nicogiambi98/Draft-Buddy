@@ -732,8 +732,58 @@
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
-            text: "Bingo (coming soon)"
+        # Header bar with title and actions
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(8)
+            TitleLabel:
+                text: "Bingo"
+                size_hint_x: 1
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+            Button:
+                id: show_btn
+                text: "Show Completed Achievements"
+                size_hint_x: None
+                width: dp(240)
+                on_release: root.open_completed_popup()
+            Button:
+                id: reset_btn
+                text: "Reset"
+                size_hint_x: None
+                width: dp(100)
+                on_release: root.reset_progress()
+        # Player title
+        HeaderLabel:
+            id: player_title
+            text: root.current_player_name or 'Select a player'
+            size_hint_y: None
+            height: dp(28)
+        # Full-width bingo grid under title
+        GridLayout:
+            id: bingo_grid
+            cols: 3
+            rows: 3
+            spacing: dp(8)
+            size_hint_y: None
+            height: self.minimum_height
+        # Players grid at the bottom (3 columns)
+        HeaderLabel:
+            text: 'Players'
+            size_hint_y: None
+            height: dp(28)
+        ScrollView:
+            id: players_sv
+            do_scroll_x: False
+            bar_width: dp(4)
+            GridLayout:
+                id: players_grid
+                cols: 3
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
 
 <DraftTimerScreen>:
     BoxLayout:
