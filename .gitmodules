@@ -1,0 +1,3 @@
+[submodule "server"]
+	path = server
+	url = https://github.com/nicogiambi98/Draft-Buddy-Server.git
