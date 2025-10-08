@@ -89,6 +89,47 @@ Spec notes:
 - assets (sounds) and optional prebuilt events.db are packaged
 - Currently configured to arm64-v8a for stability
 
+## Android build on Windows using WSL (Ubuntu)
+If you are on Windows, the most reliable way to build the Android APK is inside WSL (Windows Subsystem for Linux) using an Ubuntu distribution. Buildozer will download and use the Android SDK/NDK within WSL.
+
+Prerequisites:
+- Windows 10/11 with WSL enabled and an Ubuntu distro installed (see: https://learn.microsoft.com/windows/wsl/install)
+- At least ~10–12 GB of free disk space for SDK/NDK and caches
+
+Recommended project location:
+- For best performance and fewer path/permission issues, keep the project inside the Linux filesystem, e.g. /home/<your-user>/Draft-Buddy rather than under /mnt/c/...
+  - You can clone the repo directly in WSL: `git clone https://.../Draft-Buddy.git`
+
+Install required packages inside WSL (Ubuntu):
+- Open your Ubuntu (WSL) terminal and run:
+
+```
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git zip unzip openjdk-17-jdk \
+  libffi-dev libssl-dev build-essential ccache zlib1g-dev liblzma-dev libncurses5 libtinfo5
+python3 -m pip install --user --upgrade pip
+python3 -m pip install --user buildozer cython virtualenv
+# Ensure ~/.local/bin is on PATH for normal shells (optional convenience)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+Build the APK:
+- From the project root inside WSL, run the sanitized environment command below to avoid Windows PATH leaking into the build (important on WSL):
+
+```
+env -i HOME="$HOME" \
+  PATH="/usr/bin:/bin:/usr/local/bin:$HOME/.local/bin" \
+  LANG="C.UTF-8" SHELL="/bin/bash" \
+  buildozer -v android debug
+```
+
+Notes:
+- The first build can take a long time as Buildozer downloads the Android SDK, NDK, and other tools.
+- The resulting APK will be in the bin/ directory. You can copy it back to Windows with, for example:
+  - `cp bin/*.apk /mnt/c/Users/<YourUser>/Desktop/` (adjust path as needed)
+- If Java version issues arise, ensure Java 17 is active (OpenJDK 17 is installed above). You can check with `java -version`.
+- If you encounter SSL or network issues during SDK download, try again or ensure your corporate proxy is configured inside WSL.
+
 ## Database overview
 Tables are created automatically on first run (db.py):
 - players(id, name, created_at)
