@@ -201,3 +201,349 @@ Tip: If you want to inspect the live data on PC, open the file located at the pa
 - The league screen shows all participants who played at least one eligible match in the league window. Guests are included (by guest name).
 - You can close the current league (with confirmation); closing a league automatically opens a new one starting now.
 - Use the spinner to switch between current and past leagues.
+
+
+
+## Minimal server on Railway (upload/download + public snapshot)
+This repo now contains a tiny FastAPI server you can deploy to Railway to enable:
+- Manager login (one token per manager; offline-friendly)
+- Upload your local SQLite to the server (overwrite)
+- Download the server copy back to your device (overwrite local)
+- Public, read-only snapshot for players
+
+What you get
+- Endpoints:
+  - GET /health
+  - POST /auth/login {username, password, remember}
+  - POST /db/upload (Bearer token; multipart with the SQLite file)
+  - GET  /db/download (Bearer token)
+  - GET  /public/{manager_id}/snapshot.sqlite (public)
+  - GET  /public/{manager_id}/version (public; integer timestamp)
+- Ephemeral storage friendly: if Railway wipes storage after a restart, simply re-upload from the manager app.
+
+Folder layout
+- server/main.py          FastAPI app
+- server/requirements.txt Python deps (fastapi, uvicorn, PyJWT)
+- Dockerfile              Container for Railway
+- railway.toml            Railway config (healthcheck, env hints)
+
+Environment variables (set these in Railway → Variables)
+- JWT_SECRET: change this to a long random secret
+- USERS: comma-separated users; format username:password@manager_id
+  - Example: manager:password@leagueA,judge:1234@leagueB
+- STORAGE_DIR: where to store uploaded files (default /app/storage)
+
+Deploy to Railway
+1) Push this repo to GitHub (or your preferred git remote).
+2) In Railway, create a New Project → Deploy from Repository.
+3) Ensure the service uses this repo and detects the Dockerfile.
+4) Set Variables:
+   - JWT_SECRET = a-very-long-secret
+   - USERS = manager:password@default (or your own)
+   - STORAGE_DIR = /app/storage
+5) Deploy. After it boots, open the service URL and check /health.
+
+Quick test (PowerShell)
+- Login (replace URL):
+  $body = @{ username = 'manager'; password = 'password'; remember = $true } | ConvertTo-Json
+  $resp = Invoke-RestMethod -Method Post -Uri 'https://<app>.up.railway.app/auth/login' -ContentType 'application/json' -Body $body
+  $token = $resp.access_token
+
+- Upload your local DB (replace path):
+  Invoke-RestMethod -Method Post -Uri 'https://<app>.up.railway.app/db/upload' -Headers @{ Authorization = "Bearer $token" } -Form @{ file = Get-Item './events.db' }
+
+- Download it back:
+  Invoke-WebRequest -Method Get -Uri 'https://<app>.up.railway.app/db/download' -Headers @{ Authorization = "Bearer $token" } -OutFile './downloaded.db'
+
+- Players read snapshot:
+  Invoke-WebRequest -Uri 'https://<app>.up.railway.app/public/default/snapshot.sqlite' -OutFile './snapshot.sqlite'
+
+Client integration notes
+- Manager app can store the JWT (remember me) and work offline.
+- On Publish: POST /db/upload with the local events.db file.
+- On Pull: GET /db/download and overwrite local events.db.
+- Guest/Player: download /public/{manager_id}/snapshot.sqlite read-only.
+
+Persistence options
+- By default, Railway container storage may be ephemeral. This setup accepts that (simply re-upload if lost).
+- If you want durability later, swap the storage to an external S3-compatible bucket (Cloudflare R2/B2) and stream uploads/downloads there.
+
+# Draft Buddy
+
+Draft Buddy is a lightweight Kivy app to run casual or store events with Swiss-like rounds, a built-in draft timer, and quick player management. It works on desktop and mobile (Android via Buildozer) and stores data in a local SQLite database.
+
+## Highlights (current state)
+- Player management
+  - Add/delete players and quick filtering
+  - Support for guests alongside registered players
+- Event creation and management
+  - Create events (type: draft/sealed/cube), choose rounds and round time
+  - Select players and randomize initial seating; supports odd counts (automatic BYE handling)
+  - Round 1 pairings by seating (opposite-at-table rule)
+  - Next-round pairings: Swiss-ish algorithm, avoids rematches when possible and assigns BYE fairly
+  - Per-match score entry (game wins) with quick tap cycling 0–2
+  - Event timer with pause/resume and auto-carry-over across app pause/resume
+  - Close event and view standings at any time
+- Standings
+  - Match Points (Win=3, Draw=1, Loss=0; BYE counts as a win)
+  - MW% and GW% with 0.33 floor where applicable
+  - OMW% and OGW% (opponents’ averages), excluding BYEs
+  - Sorted by MP, OMW%, GW%, OGW%, Name
+- Draft Timer
+  - Predefined timer sequences (e.g., draft phases) with visual countdown
+  - Fun animal sound cues and assets packaged in the app
+  - Pause/Reset; persists resume timing when app regains focus
+- UI/UX
+  - Centralized styles in ui.kv: typography tokens and Primary/Secondary buttons
+  - Consistent spacing using dp(); keyboard-friendly TextInputs with hint_text
+  - Simple bottom navigation across main screens
+- Android packaging
+  - Buildozer spec included with p4a/cython pinning and assets packaging
+
+## Screens at a glance
+- Players: manage roster and filter
+- Events: list existing/open events and create new ones
+- Seating: view randomized table seating before Round 1
+- Event: track rounds, edit per-match scores, and control the timer
+- Standings: computed tie-breakers and table
+- Draft Timer: standalone multi-phase timer with sounds
+- League and Bingo: placeholders for future features
+
+## Project structure
+```
+Draft-Buddy/
+├─ main.py          # App, screens logic, navigation, timer integration
+├─ ui.kv            # Visual styles and screen layouts (typography, buttons, views)
+├─ timer.py         # DraftTimer widget with sequences, sounds, and controls
+├─ pairing.py       # Standings and Swiss-like pairing algorithms
+├─ db.py            # SQLite initialization and migrations (events.db)
+├─ events.db        # Local SQLite DB file (created on first run or prepackaged)
+├─ assets/          # Sound assets (tick.wav, animal sounds, etc.)
+├─ buildozer.spec   # Android build configuration (requirements, assets, arch)
+└─ UI_TODO.md       # Roadmap and UI/UX improvement plan
+```
+
+## Installation (desktop)
+Prerequisites:
+- Python 3.10+ recommended
+- pip and a working compiler toolchain (platform-specific)
+
+1) Create and activate a virtual environment
+- Windows (PowerShell)
+  - python -m venv .venv
+  - .venv\Scripts\Activate.ps1
+
+2) Install dependencies
+- pip install "kivy==2.2.1"
+
+3) Run
+- python main.py
+
+Notes:
+- The app will create an events.db SQLite database in the project directory on first run if not present.
+- On desktop, the window is sized to a portrait-like ratio for easier mobile UI testing.
+
+## Android build (via Buildozer)
+Prerequisites (on Linux/macOS):
+- Python 3.10+ (system), Buildozer, Android SDK/NDK toolchains pulled by buildozer
+- See https://github.com/kivy/buildozer for environment setup
+
+Steps:
+1) Ensure requirements in buildozer.spec are suitable for your system
+2) From the project root:
+   - buildozer android debug
+3) Find the generated APK in the bin/ directory and install to your device
+
+Spec notes:
+- requirements pins kivy==2.2.1, pyjnius, sqlite3, cython 0.29.x
+- assets (sounds) and optional prebuilt events.db are packaged
+- Currently configured to arm64-v8a for stability
+
+## Android build on Windows using WSL (Ubuntu)
+If you are on Windows, the most reliable way to build the Android APK is inside WSL (Windows Subsystem for Linux) using an Ubuntu distribution. Buildozer will download and use the Android SDK/NDK within WSL.
+
+Prerequisites:
+- Windows 10/11 with WSL enabled and an Ubuntu distro installed (see: https://learn.microsoft.com/windows/wsl/install)
+- At least ~10–12 GB of free disk space for SDK/NDK and caches
+
+Recommended project location:
+- For best performance and fewer path/permission issues, keep the project inside the Linux filesystem, e.g. /home/<your-user>/Draft-Buddy rather than under /mnt/c/...
+  - You can clone the repo directly in WSL: `git clone https://.../Draft-Buddy.git`
+
+Install required packages inside WSL (Ubuntu):
+- Open your Ubuntu (WSL) terminal and run:
+
+```
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git zip unzip openjdk-17-jdk \
+  libffi-dev libssl-dev build-essential ccache zlib1g-dev liblzma-dev libncurses5 libtinfo5
+python3 -m pip install --user --upgrade pip
+python3 -m pip install --user buildozer cython virtualenv
+# Ensure ~/.local/bin is on PATH for normal shells (optional convenience)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+Build the APK:
+- From the project root inside WSL, run the sanitized environment command below to avoid Windows PATH leaking into the build (important on WSL):
+
+```
+env -i HOME="$HOME" \
+  PATH="/usr/bin:/bin:/usr/local/bin:$HOME/.local/bin" \
+  SHELL="/bin/bash" \
+  TERM="$TERM" \
+  /bin/bash -lc 'buildozer android debug'
+```
+
+## License
+This project is provided as-is; if you have specific licensing needs, please add a LICENSE file and update this section accordingly.
+
+# Draft Buddy
+
+This is a minimal events manager built with Kivy.
+
+## Data storage (Where is the DB file?)
+
+The app uses a persistent SQLite database named `events.db`.
+
+- On desktop (Windows/macOS/Linux): it's stored in a per-user application folder under your home directory: `~/.draft_buddy/events.db` (on Windows: `C:\Users\<YourUser>\.draft_buddy\events.db`).
+- On Android/iOS: it uses the app's private storage directory.
+
+On first run, if no DB exists in the persistent location, the app will seed it by copying the `events.db` that ships alongside the source code (the one in the project folder). After that, the app reads and writes only the persistent copy.
+
+Tip: If you want to inspect the live data on PC, open the file located at the path above. The `events.db` in the project root is just a seed and won’t be updated after the first run.
+
+## League Tracker
+
+- Only closed events count toward league stats.
+- League Score = `100 * Winrate * (1 - e^(-0.05 * Matches))` where Winrate = `(wins + 0.5 * draws) / matches`.
+- The league screen shows all participants who played at least one eligible match in the league window. Guests are included (by guest name).
+- You can close the current league (with confirmation); closing a league automatically opens a new one starting now.
+- Use the spinner to switch between current and past leagues.
+
+
+
+## Minimal server on Railway (upload/download + public snapshot)
+This repo now contains a tiny FastAPI server you can deploy to Railway to enable:
+- Manager login (one token per manager; offline-friendly)
+- Upload your local SQLite to the server (overwrite)
+- Download the server copy back to your device (overwrite local)
+- Public, read-only snapshot for players
+
+What you get
+- Endpoints:
+  - GET /health
+  - POST /auth/login {username, password, remember}
+  - POST /db/upload (Bearer token; multipart with the SQLite file)
+  - GET  /db/download (Bearer token)
+  - GET  /public/{manager_id}/snapshot.sqlite (public)
+  - GET  /public/{manager_id}/version (public; integer timestamp)
+- Ephemeral storage friendly: if Railway wipes storage after a restart, simply re-upload from the manager app.
+
+Folder layout
+- server/main.py          FastAPI app
+- server/requirements.txt Python deps (fastapi, uvicorn, PyJWT)
+- Dockerfile              Container for Railway
+- railway.toml            Railway config (healthcheck, env hints)
+
+Environment variables (set these in Railway → Variables)
+- JWT_SECRET: change this to a long random secret
+- USERS: comma-separated users; format username:password@manager_id
+  - Example: manager:password@leagueA,judge:1234@leagueB
+- STORAGE_DIR: where to store uploaded files (default /app/storage)
+
+Deploy to Railway
+1) Push this repo to GitHub (or your preferred git remote).
+2) In Railway, create a New Project → Deploy from Repository.
+3) Ensure the service uses this repo and detects the Dockerfile.
+4) Set Variables:
+   - JWT_SECRET = a-very-long-secret
+   - USERS = manager:password@default (or your own)
+   - STORAGE_DIR = /app/storage
+5) Deploy. After it boots, open the service URL and check /health.
+
+Quick test (PowerShell)
+- Login (replace URL):
+  $body = @{ username = 'manager'; password = 'password'; remember = $true } | ConvertTo-Json
+  $resp = Invoke-RestMethod -Method Post -Uri 'https://<app>.up.railway.app/auth/login' -ContentType 'application/json' -Body $body
+  $token = $resp.access_token
+
+- Upload your local DB (replace path):
+  Invoke-RestMethod -Method Post -Uri 'https://<app>.up.railway.app/db/upload' -Headers @{ Authorization = "Bearer $token" } -Form @{ file = Get-Item './events.db' }
+
+- Download it back:
+  Invoke-WebRequest -Method Get -Uri 'https://<app>.up.railway.app/db/download' -Headers @{ Authorization = "Bearer $token" } -OutFile './downloaded.db'
+
+- Players read snapshot:
+  Invoke-WebRequest -Uri 'https://<app>.up.railway.app/public/default/snapshot.sqlite' -OutFile './snapshot.sqlite'
+
+Client integration notes
+- Manager app can store the JWT (remember me) and work offline.
+- On Publish: POST /db/upload with the local events.db file.
+- On Pull: GET /db/download and overwrite local events.db.
+- Guest/Player: download /public/{manager_id}/snapshot.sqlite read-only.
+
+Persistence options
+- By default, Railway container storage may be ephemeral. This setup accepts that (simply re-upload if lost).
+- If you want durability later, swap the storage to an external S3-compatible bucket (Cloudflare R2/B2) and stream uploads/downloads there.
+
+
+## Make server/ its own Git repo inside this project (submodule or subtree)
+You have two clean ways to make the existing `server/` folder its own Git repository while keeping this app’s main repository intact.
+
+Option A — Git submodule (recommended if you want an independent repo cloned inside this project)
+- Outcome: `server/` is a separate repo with its own remote; the parent tracks a pointer to a specific commit of `server/`.
+- When to pick: You want to version the server independently and maybe reuse it elsewhere.
+
+Steps (PowerShell, from the project root):
+1) Create a new empty repo on GitHub/GitLab, e.g. `Draft-Buddy-Server`.
+2) Prepare current folder (temporarily stash server files so we can replace the folder with a submodule clone):
+   - git status
+   - git add .
+   - git commit -m "Save work before converting server to submodule"
+   - mkdir server_tmp
+   - robocopy server server_tmp /E
+   - git rm -r --cached server
+   - Remove-Item -Recurse -Force server
+3) Add the submodule (this will create a fresh `server/` checked out from the new remote):
+   - git submodule add https://github.com/<your-user>/Draft-Buddy-Server.git server
+4) Restore your existing files into the submodule and commit in the submodule:
+   - robocopy server_tmp server /E
+   - cd server
+   - git add .
+   - git commit -m "Initial import of FastAPI server"
+   - git push -u origin main  # or master, depending on your default branch
+   - cd ..
+5) Commit and push the submodule reference in the parent repo:
+   - git add .gitmodules server
+   - git commit -m "Add server as a git submodule"
+   - git push
+6) Clean up temp folder:
+   - Remove-Item -Recurse -Force server_tmp
+
+Daily usage with submodules
+- After cloning the parent: `git clone <parent>` then `git submodule update --init --recursive`
+- To pull latest server changes from inside `server/`: `git pull` then in parent `git add server && git commit -m "Bump server submodule"`
+- To switch the parent to a different server commit: `cd server && git checkout <sha-or-branch>` then commit the new pointer in parent.
+
+Option B — Git subtree (single repo experience, remote history included)
+- Outcome: Parent remains a single repo. `server/` content is pushed/pulled to a separate remote while staying part of the parent’s history.
+- When to pick: You prefer not to manage submodules and want `git clone` to just work with no extra steps.
+
+Initial setup (PowerShell):
+1) Create a new empty repo for the server, e.g., `Draft-Buddy-Server` (no need to move files).
+2) Add the server remote as a subtree and push the existing folder content:
+   - git remote add server-remote https://github.com/<your-user>/Draft-Buddy-Server.git
+   - git subtree push --prefix server server-remote main
+
+Later: push new server-only changes upstream
+- Make edits under `server/` in the parent repo as usual
+- Push subtree changes: `git subtree push --prefix server server-remote main`
+
+Pull changes from the server repo back into the parent
+- `git subtree pull --prefix server server-remote main --squash`
+
+Notes and pitfalls
+- Do not nest a plain `.git` repo inside the parent unless it is a formal submodule; Git will ignore nested repos and it can be confusing.
+- Submodules give you strict separation but require the extra `git submodule update --init` step after cloning.
+- Subtrees keep life simple for collaborators who don’t want to deal with submodules, at the cost of slightly more complex push/pull commands for the `server/` part.
+- On Windows, `robocopy` is used above for reliable folder copies. If `robocopy` is unavailable, you can use `Copy-Item -Recurse` instead.

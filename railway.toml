@@ -1,0 +1,17 @@
+# Railway configuration for Draft Buddy minimal FastAPI server_old
+
+[build]
+builder = "Dockerfile"
+
+[deploy]
+# Expose the FastAPI app on port 8000 per Dockerfile
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[env]
+# Override these in the Railway dashboard (Variables)
+JWT_SECRET = "change-me"
+USERS = "manager:password@default"
+STORAGE_DIR = "/app/storage"
