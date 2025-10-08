@@ -724,8 +724,40 @@
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
-        Label:
-            text: "League Tracker (coming soon)"
+        BoxLayout:
+            size_hint_y: None
+            height: dp(48)
+            spacing: dp(8)
+            TitleLabel:
+                text: "League Tracker"
+                size_hint_x: 1
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+            Spinner:
+                id: league_spinner
+                text: 'Current League'
+                size_hint_x: None
+                width: dp(200)
+                on_text: root.on_league_selected(self.text)
+            Button:
+                id: close_btn
+                text: 'Close League'
+                size_hint_x: None
+                width: dp(140)
+                on_release: root.primary_action()
+        # Scoreboard grid
+        ScrollView:
+            id: league_sv
+            do_scroll_x: False
+            bar_width: dp(4)
+            GridLayout:
+                id: league_grid
+                cols: 6
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(4)
+                row_default_height: dp(42)
 
 <BingoScreen>:
     BoxLayout:

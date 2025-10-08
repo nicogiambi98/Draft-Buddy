@@ -266,6 +266,8 @@ class DraftTimer(BoxLayout):
         # Prepare sequences
         self.sequences = self.get_sequences()
         self.timer_event = None
+        # Track a pending transition between phases to avoid duplications
+        self.transition_event = None
         self.time_left = 0
 
         # UI: Top Booster, middle Pick, big Time, then compact mode spinner
@@ -403,8 +405,8 @@ class DraftTimer(BoxLayout):
 
     def get_sequences(self):
         expert = [50, 50, 45, 45, 40, 35, 30, 25, 20, 15, 10, 5, 5]
-        regular = [55, 55, 55, 45, 45, 35, 35, 25, 25, 10, 10, 5, 5]
-        beginner = [60, 60, 60, 50, 50, 40, 40, 30, 30, 15, 15, 5, 5]
+        regular = [60, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5]
+        beginner = [70, 70, 65, 65, 60, 55, 50, 40, 30, 20, 15, 10, 5]
         test = [1, 1, 1]
         return {
             "Expert": expert,
@@ -446,9 +448,19 @@ class DraftTimer(BoxLayout):
         self.start_next_timer()
 
     def start_next_timer(self, dt=None):
+        # Ensure no stray schedules/transitions from previous phase
+        try:
+            self._cancel_schedule()
+        except Exception:
+            pass
         # Ensure spinner dimmed while a timer phase is active
         try:
             self._update_spinner_state()
+        except Exception:
+            pass
+        # Clear any transition guard as we are actively in a phase now
+        try:
+            self.transition_event = None
         except Exception:
             pass
         seq = self.sequences[self.mode]
@@ -541,6 +553,13 @@ class DraftTimer(BoxLayout):
             except Exception:
                 pass
             self.timer_event = None
+        # Also cancel any pending transition to the next phase
+        if getattr(self, 'transition_event', None):
+            try:
+                self.transition_event.cancel()
+            except Exception:
+                pass
+            self.transition_event = None
 
     def _update_spinner_state(self):
         try:
@@ -577,17 +596,50 @@ class DraftTimer(BoxLayout):
                 pass
             return
         # Phase complete
-        self._cancel_schedule()
-        # Only play sound if not within suppression window
-        if time.time() >= self.suppress_until:
-            self.play_animal_sound()
-        Clock.schedule_once(self.start_next_timer, 2)  # 2-second break
+        # Cancel active interval but don't clear any existing transition that might have been scheduled
+        if self.timer_event:
+            try:
+                self.timer_event.cancel()
+            except Exception:
+                pass
+            self.timer_event = None
+        # Only schedule transition and play sound once
+        if getattr(self, 'transition_event', None) is None:
+            # Only play sound if not within suppression window
+            if time.time() >= self.suppress_until:
+                self.play_animal_sound()
+            try:
+                self.transition_event = Clock.schedule_once(self.start_next_timer, 2)  # 2-second break
+            except Exception:
+                # Fallback: call directly
+                self.start_next_timer()
 
     def play_animal_sound(self):
-        if self.animal_sounds:
-            sound = random.choice(self.animal_sounds)
-            if sound:
-                sound.play()
+        if not self.animal_sounds:
+            return
+        # Stop any currently playing animal sounds to avoid overlap
+        try:
+            for s in self.animal_sounds:
+                try:
+                    if s is not None and getattr(s, 'status', None) == 'play':
+                        s.stop()
+                except Exception:
+                    # Fallback: try stop regardless
+                    try:
+                        s.stop()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Small safety to ensure tick sound doesn't overlap right at 0
+        try:
+            if self.tick_sound is not None:
+                self.tick_sound.stop()
+        except Exception:
+            pass
+        sound = random.choice(self.animal_sounds)
+        if sound:
+            sound.play()
 
     # ---- Manual navigation helpers (prev/next) ----
     def _current_phase_info(self):

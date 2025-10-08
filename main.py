@@ -1711,7 +1711,410 @@ class StandingsScreen(Screen):
 
 
 class LeagueScreen(Screen):
-    pass
+    current_league_id = NumericProperty(0)
+
+    def on_kv_post(self, base_widget):
+        # Ensure leagues table exists, then load UI (do not auto-create an active league)
+        try:
+            from db import DB
+            DB.execute("""
+                CREATE TABLE IF NOT EXISTS leagues (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT,
+                  start_ts INTEGER NOT NULL,
+                  end_ts INTEGER
+                )
+            """)
+            DB.commit()
+        except Exception:
+            pass
+        # Load leagues and scoreboard
+        self._load_leagues()
+        self.refresh()
+
+    def on_enter(self):
+        # Refresh when entering
+        self._load_leagues()
+        self.refresh()
+
+    def _load_leagues(self):
+        try:
+            from db import DB
+            cur = DB.execute("SELECT id, name, start_ts, end_ts FROM leagues ORDER BY start_ts DESC")
+            leagues = cur.fetchall()
+            # Populate spinner
+            sp = self.ids.get('league_spinner')
+            if sp is not None:
+                items = []
+                self._league_map = {}
+                for lid, name, s, e in leagues:
+                    label = self._format_league_label(lid, name, s, e)
+                    items.append(label)
+                    self._league_map[label] = lid
+                sp.values = items
+                # Preserve selection if possible
+                desired_id = int(self.current_league_id or 0)
+                if desired_id and any(lid == desired_id for lid, *_ in leagues):
+                    # Set spinner text to the matching label
+                    for lid, name, s, e in leagues:
+                        if lid == desired_id:
+                            sp.text = self._format_league_label(lid, name, s, e)
+                            break
+                else:
+                    # Default: choose active if any, else most recent
+                    active = next((lid for lid, _, _, e in leagues if e is None), None)
+                    if active is not None:
+                        for lid, name, s, e in leagues:
+                            if lid == active:
+                                sp.text = self._format_league_label(lid, name, s, e)
+                                self.current_league_id = active
+                                break
+                    elif leagues:
+                        lid, name, s, e = leagues[0]
+                        sp.text = self._format_league_label(lid, name, s, e)
+                        self.current_league_id = lid
+            # Update action button according to current selection
+            self._update_action_button()
+        except Exception:
+            pass
+
+    def _format_league_label(self, lid, name, start_ts, end_ts):
+        def fmt(ts):
+            try:
+                return datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d')
+            except Exception:
+                return '?'
+        if end_ts is None:
+            if name:
+                return f"Current: {name} (since {fmt(start_ts)})"
+            return f"Current (since {fmt(start_ts)})"
+        else:
+            base = f"{fmt(start_ts)} to {fmt(end_ts)}"
+            if name:
+                base += f" — {name}"
+            return base
+
+    def on_league_selected(self, spinner_text):
+        # Map spinner text back to league id
+        lid = getattr(self, '_league_map', {}).get(spinner_text)
+        if lid:
+            self.current_league_id = lid
+            self._update_action_button()
+            self.refresh()
+
+    def primary_action(self):
+        """Main button depends on whether any active league exists, regardless of selection."""
+        try:
+            from db import DB
+            # Check if there is any active league (end_ts IS NULL)
+            row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+            if row:
+                # There is an active league -> close confirmation
+                self.confirm_close_league()
+            else:
+                # No active league -> prompt to start a new one
+                self.prompt_new_league()
+        except Exception:
+            # Safe fallback: try starting a new league
+            self.prompt_new_league()
+
+    def confirm_close_league(self):
+        # Show confirmation popup before closing current league
+        try:
+            box = BoxLayout(orientation='vertical', padding=dp(6), spacing=dp(6))
+            msg = Label(text="Close the current league?", size_hint_y=None, height=dp(24), halign='center', valign='middle')
+            msg.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+            box.add_widget(msg)
+            btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
+            popup = Popup(title="Confirm", title_size=dp(18), content=box, size_hint=(0.9, None), height=dp(140), auto_dismiss=False)
+            def do_yes(instance):
+                popup.dismiss()
+                self.close_current_league()
+            def do_cancel(instance):
+                popup.dismiss()
+            yes = Button(text="Yes", on_release=do_yes, size_hint_y=None, height=dp(40))
+            no = Button(text="Cancel", on_release=do_cancel, size_hint_y=None, height=dp(40))
+            btns.add_widget(no)
+            btns.add_widget(yes)
+            box.add_widget(btns)
+            popup.open()
+        except Exception:
+            # Fallback: directly close if popup fails
+            self.close_current_league()
+
+    def prompt_new_league(self):
+        # Popup to insert the league name
+        try:
+            from kivy.uix.textinput import TextInput
+            # Add a bit more space under the title (about 40px)
+            box = BoxLayout(orientation='vertical', padding=[dp(8), dp(40), dp(8), dp(8)], spacing=dp(6))
+            lbl = Label(text="Insert the league name", size_hint_y=None, height=dp(24), halign='center', valign='middle')
+            lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+            ti = TextInput(hint_text="League name", multiline=False, size_hint_y=None, height=dp(36))
+            btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
+            popup = Popup(title="New League", title_size=dp(18), content=box, size_hint=(0.9, None), height=dp(170), auto_dismiss=False)
+            def do_confirm(instance):
+                name = ti.text.strip() or None
+                popup.dismiss()
+                self.create_new_league(name)
+            def do_cancel(instance):
+                popup.dismiss()
+            ok = Button(text="Confirm", on_release=do_confirm, size_hint_y=None, height=dp(40))
+            cancel = Button(text="Cancel", on_release=do_cancel, size_hint_y=None, height=dp(40))
+            box.add_widget(lbl)
+            box.add_widget(ti)
+            box.add_widget(btns)
+            btns.add_widget(cancel)
+            btns.add_widget(ok)
+            popup.open()
+        except Exception:
+            # Fallback with empty name
+            self.create_new_league(None)
+
+    def create_new_league(self, name=None):
+        try:
+            from db import DB
+            now = int(time.time())
+            # Close any existing active league silently if present? We only start when none is active; keep simple insert.
+            DB.execute("INSERT INTO leagues (name, start_ts, end_ts) VALUES (?, ?, NULL)", (name, now))
+            DB.commit()
+            # Reload leagues, select the new one
+            self._load_leagues()
+            # Find active league id (new one)
+            try:
+                row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+                if row:
+                    self.current_league_id = int(row[0])
+            except Exception:
+                pass
+            self._update_action_button()
+            self.refresh()
+            app = App.get_running_app()
+            if app:
+                app.show_toast("New league started")
+        except Exception:
+            pass
+
+    def _update_action_button(self):
+        try:
+            btn = self.ids.get('close_btn')
+            if not btn:
+                return
+            from db import DB
+            # Button reflects global state: if any active league exists -> Close League, else Start New League
+            row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+            if row:
+                btn.text = 'Close League'
+            else:
+                btn.text = 'Start New League'
+        except Exception:
+            pass
+
+    def show_db_path(self):
+        # Display the actual database path in a small popup (and toast)
+        try:
+            from db import get_db_path
+            path = get_db_path()
+        except Exception:
+            path = "(unknown)"
+        # Try to copy to clipboard on button press
+        box = BoxLayout(orientation='vertical', padding=dp(6), spacing=dp(6))
+        msg = Label(text=f"Database file:\n{path}", size_hint_y=None, height=dp(64), halign='center', valign='middle')
+        msg.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+        btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
+        popup = Popup(title="Database Path", title_size=dp(18), content=box, size_hint=(0.9, None), height=dp(180), auto_dismiss=True)
+        def do_copy(instance):
+            try:
+                from kivy.core.clipboard import Clipboard
+                Clipboard.copy(path)
+                app = App.get_running_app()
+                if app:
+                    app.show_toast("Path copied to clipboard")
+            except Exception:
+                pass
+            popup.dismiss()
+        ok = Button(text="Copy & Close", on_release=do_copy, size_hint_y=None, height=dp(40))
+        box.add_widget(msg)
+        box.add_widget(btns)
+        btns.add_widget(ok)
+        popup.open()
+
+    def close_current_league(self):
+        try:
+            from db import DB
+            now = int(time.time())
+            cur = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1")
+            row = cur.fetchone()
+            if row:
+                DB.execute("UPDATE leagues SET end_ts=? WHERE id=?", (now, row[0]))
+                DB.commit()
+            # Reload UI and keep selection on the just closed league
+            self._load_leagues()
+            self._update_action_button()
+            self.refresh()
+            app = App.get_running_app()
+            if app:
+                app.show_toast("League closed")
+        except Exception:
+            pass
+
+    def refresh(self):
+        # Render scoreboard for selected league
+        grid = self.ids.get('league_grid')
+        if grid is None:
+            return
+        grid.clear_widgets()
+        # Header
+        headers = ['#', 'Name', 'MP', 'W-L-D', 'Winrate %', 'League Score']
+        col_sizes = [0.6, 3.0, 0.8, 1.1, 1.1, 1.2]
+        def add_cell(text, bold=False, halign='center', size_hint_x=1.0):
+            lbl = Label(text=(f"[b]{text}[/b]" if bold else text), markup=True, size_hint_y=None, height=dp(42), color=(1,1,1,1), halign=halign, valign='middle')
+            lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+            lbl.size_hint_x = size_hint_x
+            grid.add_widget(lbl)
+        for i, h in enumerate(headers):
+            add_cell(h, bold=True, halign=('left' if h == 'Name' else 'center'), size_hint_x=col_sizes[i])
+        # Data
+        rows = self._compute_league_rows()
+        from kivy.uix.scrollview import ScrollView
+        for rank, st in enumerate(rows, start=1):
+            name = st['name']
+            mp = st['matches']
+            w = st['wins']
+            l = st['losses']
+            d = st['draws']
+            wr = f"{st['winrate']*100:.2f}"
+            ls = f"{st['score']:.2f}"
+            row_values = [str(rank), name, str(mp), f"{w}-{l}-{d}", wr, ls]
+            for i, val in enumerate(row_values):
+                if i == 1:
+                    sv = ScrollView(size_hint_y=None, height=dp(42), do_scroll_x=True, do_scroll_y=False, bar_width=0)
+                    sv.effect_y = None
+                    sv.scroll_wheel_distance = 0
+                    sv.scroll_y = 1
+                    sv.size_hint_x = col_sizes[i]
+                    name_lbl = Label(text=val, markup=True, size_hint_y=None, height=dp(42), color=(1,1,1,1), halign='left', valign='middle', size_hint_x=None)
+                    name_lbl.bind(texture_size=lambda inst, val: setattr(inst, 'width', val[0] + dp(4)))
+                    name_lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (None, None)))
+                    sv.add_widget(name_lbl)
+                    grid.add_widget(sv)
+                else:
+                    add_cell(val, bold=False, halign='center', size_hint_x=col_sizes[i])
+
+    def _compute_league_rows(self):
+        try:
+            from db import DB
+            # Find selected league window
+            lid = int(self.current_league_id or 0)
+            row = DB.execute("SELECT start_ts, end_ts FROM leagues WHERE id=?", (lid,)).fetchone()
+            if not row:
+                # fallback to active
+                row = DB.execute("SELECT start_ts, end_ts, id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+                if row and len(row) == 3:
+                    self.current_league_id = row[2]
+                    start_ts, end_ts = row[0], row[1]
+                elif row:
+                    start_ts, end_ts = row[0], row[1]
+                else:
+                    start_ts = int(time.time())
+                    end_ts = None
+            else:
+                start_ts, end_ts = row
+            # Load closed events within the league window based on when the event actually started (round_start_ts)
+            # Guard against null/malformed start_ts; if missing, treat as now to avoid including older events.
+            safe_start = int(start_ts) if start_ts is not None else int(time.time())
+            params = [safe_start]
+            where = "status='closed' AND round_start_ts IS NOT NULL AND round_start_ts >= ?"
+            if end_ts is not None:
+                where += " AND round_start_ts <= ?"
+                params.append(int(end_ts))
+            ev_rows = DB.execute(f"SELECT id FROM events WHERE {where}", tuple(params)).fetchall()
+            event_ids = [int(r[0]) for r in ev_rows]
+            if not event_ids:
+                return []
+            # Map event_players.id to a unified participant key and gather participants per event
+            # Registered players use their integer player_id; guests use a synthetic key 'g:<name>'
+            ep_map = {}  # eid -> {event_player_id: participant_key}
+            participants = set()  # set of participant keys seen in eligible events
+            qmarks = ','.join('?' for _ in event_ids)
+            for (ep_id, ev_id, pid, guest) in DB.execute(
+                f"SELECT id, event_id, player_id, guest_name FROM event_players WHERE event_id IN ({qmarks})",
+                event_ids
+            ).fetchall():
+                if pid is not None:
+                    key = int(pid)
+                elif guest:
+                    key = f"g:{guest}"
+                else:
+                    # Skip malformed entries
+                    continue
+                ep_map.setdefault(ev_id, {})[ep_id] = key
+                participants.add(key)
+            if not participants:
+                return []
+            # Initialize stats per participant
+            stats = {key: {'pid': key, 'name': '', 'matches': 0, 'wins': 0, 'losses': 0, 'draws': 0} for key in participants}
+            # Names: fill for registered and guest participants
+            reg_ids = [k for k in participants if isinstance(k, int)]
+            if reg_ids:
+                for pid, name in DB.execute(
+                    f"SELECT id, COALESCE(nickname, name) FROM players WHERE id IN ({','.join('?' for _ in reg_ids)})",
+                    reg_ids
+                ).fetchall():
+                    if pid in stats:
+                        stats[pid]['name'] = name
+            # Guests
+            for key in participants:
+                if isinstance(key, str) and key.startswith('g:'):
+                    stats[key]['name'] = key[2:] or 'Guest'
+            # Iterate matches in eligible events
+            for ev_id in event_ids:
+                # BYEs and matches
+                for p1, p2, s1, s2, bye in DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (ev_id,)).fetchall():
+                    s1 = int(s1 or 0)
+                    s2 = int(s2 or 0)
+                    if bye == 1:
+                        # count as 1 match and a win for player1 if mapped
+                        pid1 = ep_map.get(ev_id, {}).get(p1)
+                        if pid1 is not None and pid1 in stats:
+                            stats[pid1]['wins'] += 1
+                            stats[pid1]['matches'] += 1
+                        continue
+                    pid1 = ep_map.get(ev_id, {}).get(p1)
+                    pid2 = ep_map.get(ev_id, {}).get(p2)
+                    if pid1 is None or pid2 is None:
+                        continue
+                    # both participants
+                    stats[pid1]['matches'] += 1
+                    stats[pid2]['matches'] += 1
+                    if s1 > s2:
+                        stats[pid1]['wins'] += 1
+                        stats[pid2]['losses'] += 1
+                    elif s2 > s1:
+                        stats[pid2]['wins'] += 1
+                        stats[pid1]['losses'] += 1
+                    else:
+                        stats[pid1]['draws'] += 1
+                        stats[pid2]['draws'] += 1
+            # Ensure players who registered but had 0 matches still appear
+            # Already in stats via participants set
+            # Compute winrate and score
+            import math
+            out = []
+            # Factor for winrate over matches
+            k = 0.3
+            for st in stats.values():
+                mp = st['matches']
+                wr = ((st['wins'] + 0.5 * st['draws']) / mp) if mp > 0 else 0.0
+                score = 100.0 * wr * (1.0 - math.e ** (-k * mp))
+                st['winrate'] = wr
+                st['score'] = score
+                out.append(st)
+            # Sort by league score desc, then winrate desc, then name asc
+            out.sort(key=lambda r: (-r['score'], -r['winrate'], r['name']))
+            return out
+        except Exception:
+            return []
 
 
 class BingoScreen(Screen):
@@ -2101,16 +2504,24 @@ class BingoScreen(Screen):
         popup.open()
 
     def reset_progress(self):
-        # Confirm
-        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
-        content.add_widget(Label(text='Reset all bingo progresses? This cannot be undone.'))
+        # Confirm (wrap long text to avoid overflow)
+        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(12))
+        # Scrollable, wrapping message
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, 1))
+        msg = Label(text='Reset all bingo progresses? This cannot be undone.', halign='center', valign='top', size_hint_y=None)
+        # Bind width to wrap text and height to texture
+        msg.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(16), None)))
+        msg.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+        sv.add_widget(msg)
+        content.add_widget(sv)
         btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
         yes = Button(text='Yes')
         no = Button(text='No')
         btns.add_widget(yes)
         btns.add_widget(no)
         content.add_widget(btns)
-        popup = Popup(title='Confirm Reset', content=content, size_hint=(0.8, 0.3))
+        popup = Popup(title='Confirm Reset', content=content, size_hint=(0.85, 0.32))
         no.bind(on_release=lambda *_: popup.dismiss())
         def _do(*_):
             popup.dismiss()

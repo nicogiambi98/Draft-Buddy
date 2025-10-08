@@ -144,7 +144,25 @@ def init_db():
                 conn.commit()
         except Exception:
             pass
+        # Migration: ensure leagues table exists
+        try:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leagues (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT,
+                  start_ts INTEGER NOT NULL,
+                  end_ts INTEGER
+                )
+                """
+            )
+            conn.commit()
+        except Exception:
+            pass
     return conn
 
+
+def get_db_path() -> str:
+    return _get_persistent_db_path()
 
 DB = init_db()
