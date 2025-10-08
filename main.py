@@ -1846,13 +1846,15 @@ class LeagueScreen(Screen):
         # Popup to insert the league name
         try:
             from kivy.uix.textinput import TextInput
-            # Add a bit more space under the title (about 40px)
-            box = BoxLayout(orientation='vertical', padding=[dp(8), dp(40), dp(8), dp(8)], spacing=dp(6))
+            from kivy.uix.widget import Widget
+            # Explicit spacer below the title to avoid overlap with the title separator
+            box = BoxLayout(orientation='vertical', padding=[dp(8), dp(8), dp(8), dp(8)], spacing=dp(6))
+            spacer = Widget(size_hint_y=None, height=dp(40))
             lbl = Label(text="Insert the league name", size_hint_y=None, height=dp(24), halign='center', valign='middle')
             lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
             ti = TextInput(hint_text="League name", multiline=False, size_hint_y=None, height=dp(36))
             btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
-            popup = Popup(title="New League", title_size=dp(18), content=box, size_hint=(0.9, None), height=dp(170), auto_dismiss=False)
+            popup = Popup(title="New League", title_size=dp(18), content=box, size_hint=(0.9, None), height=dp(200), auto_dismiss=False)
             def do_confirm(instance):
                 name = ti.text.strip() or None
                 popup.dismiss()
@@ -1861,6 +1863,7 @@ class LeagueScreen(Screen):
                 popup.dismiss()
             ok = Button(text="Confirm", on_release=do_confirm, size_hint_y=None, height=dp(40))
             cancel = Button(text="Cancel", on_release=do_cancel, size_hint_y=None, height=dp(40))
+            box.add_widget(spacer)
             box.add_widget(lbl)
             box.add_widget(ti)
             box.add_widget(btns)
