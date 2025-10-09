@@ -8,6 +8,8 @@ from kivy.core.audio import SoundLoader
 from kivy.core.text import Label as CoreLabel
 import random
 import time
+import os
+from glob import glob
 
 # Generic image icon button to be used from kv
 from kivy.uix.behaviors import ButtonBehavior
@@ -256,11 +258,30 @@ class DraftTimer(BoxLayout):
         self.phase_start_ts = 0  # epoch seconds when current phase started
         self.phase_duration = 0  # seconds allocated to current phase
 
-        # Load sounds
-        self.animal_sounds = [
-            SoundLoader.load(f"assets/{name}.wav")
-            for name in ["bark", "meow", "geese", "bird", "cow"]
-        ]
+        # Load sounds: include all mp3/wav/ogg in assets except the ticking sound
+        audio_files = []
+        try:
+            for pattern in ('*.mp3', '*.wav', '*.ogg'):
+                audio_files.extend(glob(os.path.join('assets', pattern)))
+        except Exception:
+            audio_files = [
+                os.path.join('assets', f) for f in [
+                    'bark.mp3', 'bark.wav', 'meow.wav', 'bird.mp3', 'cow.wav',
+                    'crow.mp3', 'duck.mp3', 'goat.mp3', 'horse.mp3', 'rooster.mp3',
+                    'elephant.mp3', 'howl.mp3', 'lion.mp3', 'owl.mp3', 'seagulls.mp3', 'sheep.mp3'
+                ]
+            ]
+        # Exclude tick sound and non-existing files
+        audio_files = [p for p in audio_files if os.path.basename(p).lower() != 'tick.wav' and os.path.isfile(p)]
+        # Load and keep only successfully loaded sounds
+        self.animal_sounds = []
+        for p in audio_files:
+            try:
+                s = SoundLoader.load(p)
+                if s is not None:
+                    self.animal_sounds.append(s)
+            except Exception:
+                pass
         self.tick_sound = SoundLoader.load("assets/tick.wav")
 
         # Prepare sequences
