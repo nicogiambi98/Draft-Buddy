@@ -1135,19 +1135,15 @@ class EventScreen(Screen):
         self._timer_round = 0
         self._end_sound_played = False
         self.view_round = None  # if set, we are viewing a past (or specific) round without changing state
-        # load sounds
+        # load sounds: only tick for countdown and rooster at end (no random pool)
         try:
             self.tick_sound = SoundLoader.load("assets/tick.wav")
         except Exception:
             self.tick_sound = None
-        self.animal_sounds = []
-        for name in ["bark", "meow", "geese", "bird", "cow"]:
-            try:
-                snd = SoundLoader.load(f"assets/{name}.wav")
-                if snd:
-                    self.animal_sounds.append(snd)
-            except Exception:
-                pass
+        try:
+            self.end_sound = SoundLoader.load("assets/rooster.mp3")
+        except Exception:
+            self.end_sound = None
 
     def load_event(self, event_id):
         self.event_id = event_id
@@ -1300,10 +1296,9 @@ class EventScreen(Screen):
         # Play end sound at 0 exactly
         if self.time_left == 0 and not self._end_sound_played:
             try:
-                if self.animal_sounds:
-                    snd = random.choice(self.animal_sounds)
-                    if snd:
-                        snd.play()
+                snd = getattr(self, 'end_sound', None)
+                if snd:
+                    snd.play()
             except Exception:
                 pass
             self._end_sound_played = True
