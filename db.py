@@ -166,3 +166,21 @@ def get_db_path() -> str:
     return _get_persistent_db_path()
 
 DB = init_db()
+
+
+def reload_db():
+    """Close and reopen the global SQLite connection after external DB file replacement.
+    Safe to call multiple times. Swallows exceptions to avoid crashing UI.
+    """
+    global DB
+    try:
+        try:
+            if DB:
+                DB.close()
+        except Exception:
+            pass
+        DB = init_db()
+        return True
+    except Exception:
+        # Leave DB as-is on failure
+        return False

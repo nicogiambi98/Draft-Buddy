@@ -8,6 +8,7 @@ import os
 import time
 from datetime import datetime
 import json
+import requests
 
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
@@ -27,6 +28,7 @@ from kivy.utils import platform
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivy.animation import Animation
+from db import get_db_path
 
 # Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
 # Only apply on desktop platforms to avoid interfering with mobile builds
@@ -2655,13 +2657,339 @@ class LifeTrackerScreen(Screen):
         popup.open()
 
 
+# -------------- Auth & Server Helpers --------------
+
+def _auth_path() -> str:
+    try:
+        base_dir = os.path.dirname(get_db_path())
+    except Exception:
+        base_dir = os.path.join(os.path.expanduser('~'), '.draft_buddy')
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(base_dir, 'auth.json')
+
+
+def load_auth():
+    try:
+        p = _auth_path()
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def save_auth(data: dict):
+    try:
+        p = _auth_path()
+        with open(p, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+        return True
+    except Exception:
+        return False
+
+
+def clear_auth():
+    try:
+        p = _auth_path()
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
+
+
+def _get_base_url(auth: dict | None) -> str:
+    # Fixed, non-configurable base URL per requirements
+    return "https://draftbuddy.hackthep.it"
+
+
+class LoginScreen(Screen):
+    server_url = StringProperty("")
+    username = StringProperty("")
+    status = StringProperty("")
+
+    def on_pre_enter(self):
+        try:
+            auth = load_auth() or {}
+            # server URL is fixed; no need to load from auth
+            self.username = auth.get('username', self.username or '')
+            self.status = ''
+        except Exception:
+            pass
+
+    def do_login(self, password: str, remember: bool):
+        password = password or ''
+        base = _get_base_url(None)
+        user = (self.username or '').strip()
+        if not user or not password:
+            App.get_running_app().show_toast('Please fill username and password')
+            return
+        url = f"{base}/auth/login"
+        try:
+            resp = requests.post(url, json={
+                'username': user,
+                'password': password,
+                'remember': bool(remember),
+            }, timeout=15)
+            if resp.status_code != 200:
+                self.status = f"Login failed: {resp.status_code}"
+                App.get_running_app().show_toast('Invalid credentials')
+                return
+            data = resp.json()
+            token = data.get('access_token')
+            manager_id = data.get('manager_id')
+            exp = data.get('exp')
+            role = data.get('role', 'guest')
+            if not token or not manager_id:
+                self.status = 'Unexpected server response'
+                App.get_running_app().show_toast('Unexpected response')
+                return
+            save_auth({
+                'base_url': base,
+                'username': user,
+                'token': token,
+                'manager_id': manager_id,
+                'exp': exp,
+                'role': role,
+            })
+            # Go to main tab and show bottom nav
+            app = App.get_running_app()
+            if app and app.root:
+                sm = app.root.ids.sm
+                sm.current = 'players'
+                try:
+                    app.root.ids.bottomnav.opacity = 1
+                    app.root.ids.bottomnav.height = dp(56)
+                    app.root.ids.bottomnav.disabled = False
+                except Exception:
+                    pass
+            app.show_toast('Logged in')
+        except Exception as e:
+            self.status = 'Network error'
+            App.get_running_app().show_toast('Network error while logging in')
+
+    def login_guest(self):
+        try:
+            self.username = 'guest'
+        except Exception:
+            pass
+        # Use remember=True by default for guest for convenience
+        self.do_login('guest', True)
+
+
+class SettingsScreen(Screen):
+    from kivy.properties import BooleanProperty
+    info_text = StringProperty("")
+    can_upload = BooleanProperty(False)
+    last_status = StringProperty("")
+
+    def on_pre_enter(self):
+        try:
+            auth = load_auth() or {}
+            base = _get_base_url(auth)
+            user = auth.get('username', '')
+            mid = auth.get('manager_id', '')
+            have_token = bool(auth.get('token'))
+            role = auth.get('role', 'guest')
+            # Allow upload if authenticated and either server-reported role is manager or username starts with 'manager'
+            uname = (user or '').strip().lower()
+            self.can_upload = bool(have_token and (role == 'manager' or uname.startswith('manager')))
+            self.info_text = f"Server: {base}\nUser: {user}\nRole: {role}\nManager ID: {mid}\nAuthenticated: {'yes' if have_token else 'no'}"
+        except Exception:
+            self.info_text = ""
+            self.can_upload = False
+
+    def do_logout(self):
+        clear_auth()
+        app = App.get_running_app()
+        if app and app.root:
+            try:
+                app.root.ids.sm.current = 'login'
+                app.root.ids.bottomnav.opacity = 0
+                app.root.ids.bottomnav.height = 0
+                app.root.ids.bottomnav.disabled = True
+            except Exception:
+                pass
+        app.show_toast('Logged out')
+
+    def _replace_db_with_file(self, tmp_path: str):
+        try:
+            target = get_db_path()
+            tmp = target + '.tmpdl'
+            # Move to tmp then atomically replace
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
+            os.replace(tmp_path, tmp)
+            os.replace(tmp, target)
+            # Reload global DB connection so the app sees the new data immediately
+            try:
+                from db import reload_db
+                reload_db()
+            except Exception:
+                pass
+            App.get_running_app().show_toast('Database updated')
+        except Exception:
+            App.get_running_app().show_toast('Failed to replace DB')
+
+    def do_download(self):
+        auth = load_auth() or {}
+        base = _get_base_url(auth)
+        if not base:
+            App.get_running_app().show_toast('Set server in Login first')
+            return
+        token = auth.get('token')
+        manager_id = auth.get('manager_id')
+        # Helper to perform GET with optional SSL verify
+        def _get(url, headers=None, allow_insecure_retry=True):
+            try:
+                return requests.get(url, headers=headers or {}, timeout=30, stream=True)
+            except requests.exceptions.SSLError:
+                if allow_insecure_retry:
+                    try:
+                        return requests.get(url, headers=headers or {}, timeout=30, stream=True, verify=False)
+                    except Exception:
+                        raise
+                raise
+        try:
+            attempted_urls = []
+            start_ts = time.time()
+            used_public = False
+            # 1) Try private download if we have a token
+            if token:
+                url = f"{base}/db/download"
+                headers = {'Authorization': f'Bearer {token}'}
+                attempted_urls.append(url)
+                r = _get(url, headers=headers)
+                # If we get 404, fall back to public snapshot (maybe never uploaded yet)
+                if r.status_code == 404 and manager_id:
+                    try:
+                        r.close()
+                    except Exception:
+                        pass
+                    url_pub = f"{base}/public/{manager_id}/snapshot.sqlite"
+                    attempted_urls.append(url_pub)
+                    r = _get(url_pub)
+                    used_public = True
+            else:
+                # No token: use public snapshot directly
+                url = f"{base}/public/{manager_id}/snapshot.sqlite"
+                attempted_urls.append(url)
+                r = _get(url)
+                used_public = True
+
+            if r.status_code != 200:
+                # Try include a short server message
+                msg = ''
+                try:
+                    body = r.text
+                    if body:
+                        msg = f" - {body[:200]}"  # trim
+                except Exception:
+                    msg = ''
+                err = f"Download failed: {r.status_code}{msg}\nTried: {' -> '.join(attempted_urls)}"
+                self.last_status = err
+                App.get_running_app().show_toast(f'Download failed: {r.status_code}')
+                try:
+                    r.close()
+                except Exception:
+                    pass
+                return
+
+            # Save to a temp file (stream to avoid large memory)
+            import tempfile
+            fd, path = tempfile.mkstemp(prefix='dbdl_', suffix='.sqlite')
+            os.close(fd)
+            bytes_written = 0
+            with open(path, 'wb') as f:
+                try:
+                    for chunk in r.iter_content(chunk_size=1024 * 64):
+                        if chunk:
+                            f.write(chunk)
+                            bytes_written += len(chunk)
+                finally:
+                    try:
+                        r.close()
+                    except Exception:
+                        pass
+            self._replace_db_with_file(path)
+            dur_ms = int((time.time() - start_ts) * 1000)
+            src = "public" if used_public else "private"
+            self.last_status = f"Downloaded {bytes_written} bytes from {src} in {dur_ms} ms\nURL: {attempted_urls[-1]}"
+            App.get_running_app().show_toast('Download complete')
+        except Exception as e:
+            self.last_status = 'Network error during download'
+            App.get_running_app().show_toast('Network error during download')
+
+    def do_upload(self):
+        auth = load_auth() or {}
+        base = _get_base_url(auth)
+        token = auth.get('token')
+        if not base or not token:
+            self.last_status = 'Upload unavailable: not authenticated as manager'
+            App.get_running_app().show_toast('Login as manager to upload')
+            return
+        url = f"{base}/db/upload"
+        headers = {'Authorization': f'Bearer {token}'}
+        db_path = get_db_path()
+        try:
+            size = os.path.getsize(db_path)
+        except Exception:
+            size = None
+
+        def _upload(verify=True):
+            with open(db_path, 'rb') as f:
+                files = {'file': ('events.sqlite', f, 'application/octet-stream')}
+                return requests.post(url, headers=headers, files=files, timeout=60, verify=verify)
+
+        try:
+            start_ts = time.time()
+            try:
+                resp = _upload(verify=True)
+            except requests.exceptions.SSLError:
+                # Retry without SSL verification (some Android environments lack full root CA store)
+                resp = _upload(verify=False)
+
+            dur_ms = int((time.time() - start_ts) * 1000)
+            if resp.status_code == 200:
+                # Parse server JSON for extra details
+                det = {}
+                try:
+                    det = resp.json()
+                except Exception:
+                    pass
+                ver = det.get('version') if isinstance(det, dict) else None
+                stored = det.get('stored') if isinstance(det, dict) else None
+                self.last_status = f"Uploaded {size if size is not None else '?'} bytes in {dur_ms} ms\nURL: {url}\nServer stored: {stored or '-'} ver={ver or '-'}"
+                App.get_running_app().show_toast('Upload complete')
+            else:
+                # Include short server message to help diagnose (e.g., 403 Forbidden)
+                extra = ''
+                try:
+                    txt = resp.text
+                    if txt:
+                        extra = f" - {txt[:200]}"
+                except Exception:
+                    pass
+                self.last_status = f"Upload failed: {resp.status_code}{extra}\nURL: {url}"
+                App.get_running_app().show_toast(f'Upload failed: {resp.status_code}')
+        except Exception:
+            self.last_status = 'Network error during upload'
+            App.get_running_app().show_toast('Network error during upload')
+
+
 class BottomNav(BoxLayout):
     def on_kv_post(self, base_widget):
         # After kv is applied and sizes are known, center on current tab
         Clock.schedule_once(lambda dt: self.center_on(getattr(App.get_running_app().root.ids.sm, 'current', 'players')), 0)
 
     def _buttons_per_group(self):
-        return 6  # players, events, league, bingo, drafttimer, lifetracker
+        return 7  # players, events, league, bingo, drafttimer, lifetracker, settings
 
     def _group_offset(self):
         # Number of widgets before the middle group starts
@@ -2672,7 +3000,7 @@ class BottomNav(BoxLayout):
             row = self.ids.nav_row
         except Exception:
             return None
-        labels = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker']
+        labels = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker', 'settings']
         try:
             idx_in_group = labels.index(target)
         except ValueError:
@@ -2904,6 +3232,8 @@ class EventsApp(App):
         # Ensure transition is SlideTransition with short duration
         sm.transition = SlideTransition(duration=0.18)
         # Add all screens to ScreenManager
+        sm.add_widget(LoginScreen(name="login"))
+        sm.add_widget(SettingsScreen(name="settings"))
         sm.add_widget(PlayersScreen(name="players"))
         sm.add_widget(NewPlayerScreen(name="newplayer"))
         sm.add_widget(CreateEventDetailsScreen(name="createevent_details"))
@@ -2916,6 +3246,33 @@ class EventsApp(App):
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
         sm.add_widget(LifeTrackerScreen(name="lifetracker"))
+        # Set initial screen based on saved auth
+        try:
+            auth = load_auth()
+            if auth and (auth.get('token') or auth.get('manager_id')):
+                sm.current = 'players'
+                try:
+                    root.ids.bottomnav.opacity = 1
+                    root.ids.bottomnav.height = dp(56)
+                    root.ids.bottomnav.disabled = False
+                except Exception:
+                    pass
+            else:
+                sm.current = 'login'
+                try:
+                    root.ids.bottomnav.opacity = 0
+                    root.ids.bottomnav.height = 0
+                    root.ids.bottomnav.disabled = True
+                except Exception:
+                    pass
+        except Exception:
+            sm.current = 'login'
+            try:
+                root.ids.bottomnav.opacity = 0
+                root.ids.bottomnav.height = 0
+                root.ids.bottomnav.disabled = True
+            except Exception:
+                pass
         # Prefer the keyboard to overlap the UI (avoid panning the whole page)
         try:
             # below_target keeps the focused widget visible without moving the whole layout
@@ -2991,7 +3348,7 @@ class EventsApp(App):
             sm = self.root.ids.sm
         except Exception:
             return
-        order = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker']
+        order = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker', 'settings']
         try:
             cur = sm.current
             i_cur = order.index(cur) if cur in order else None

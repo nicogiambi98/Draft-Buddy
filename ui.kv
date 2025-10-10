@@ -14,6 +14,9 @@
             transition: SlideTransition(duration=0.18)
         BottomNav:
             id: bottomnav
+            height: dp(56) if sm.current != 'login' else 0
+            opacity: 1 if sm.current != 'login' else 0
+            disabled: True if sm.current == 'login' else False
     # Toast overlay layer (covers entire root without affecting layout)
     FloatLayout:
         id: toast_layer
@@ -161,6 +164,14 @@
                 color: 1,1,1,1
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
+            Button:
+                text: "Settings"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('settings')
             # Group 2 (middle group for centering)
             Button:
                 text: "Players"
@@ -210,6 +221,14 @@
                 color: 1,1,1,1
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
+            Button:
+                text: "Settings"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('settings')
             # Group 3 (for circular effect)
             Button:
                 text: "Players"
@@ -259,6 +278,14 @@
                 color: 1,1,1,1
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='lifetracker') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('lifetracker')
+            Button:
+                text: "Settings"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='settings') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('settings')
 
 # Global button text alignment
 <Button>:
@@ -1023,7 +1050,7 @@
     background_normal: ''
     background_down: ''
     # Active tab? compare center group button text with ScreenManager current
-    background_color: ((app.theme['primary']) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker'))) else (0.23, 0.23, 0.25, 1)) if hasattr(app, 'theme') else ((0.16,0.47,0.96,1) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker'))) else (0.23,0.23,0.25,1))
+    background_color: ((app.theme['primary']) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker') or (self.text=='Settings' and app.root.ids.sm.current=='settings'))) else (0.23, 0.23, 0.25, 1)) if hasattr(app, 'theme') else ((0.16,0.47,0.96,1) if (hasattr(app, 'root') and app.root and app.root.ids and 'sm' in app.root.ids and ((self.text=='Players' and app.root.ids.sm.current=='players') or (self.text=='Events' and app.root.ids.sm.current=='eventslist') or (self.text=='League Tracker' and app.root.ids.sm.current=='league') or (self.text=='Bingo' and app.root.ids.sm.current=='bingo') or (self.text=='Draft Timer' and app.root.ids.sm.current=='drafttimer') or (self.text=='Life Tracker' and app.root.ids.sm.current=='lifetracker') or (self.text=='Settings' and app.root.ids.sm.current=='settings'))) else (0.23,0.23,0.25,1))
     color: 1, 1, 1, 1
     on_kv_post: self.color = (1,1,1,1)
     # High-contrast left divider
@@ -1034,3 +1061,112 @@
             # vertical divider along the left edge of the button (slight inset top/bottom)
             pos: self.x, self.y + dp(6)
             size: dp(2), self.height - dp(12)
+
+
+
+# Login Screen
+<LoginScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(12)
+        spacing: dp(10)
+        TitleLabel:
+            text: 'Login'
+            size_hint_y: None
+            height: dp(40)
+        GridLayout:
+            cols: 2
+            size_hint_y: None
+            height: self.minimum_height
+            row_default_height: dp(48)
+            row_force_default: True
+            spacing: dp(8)
+            HeaderLabel:
+                text: 'Username'
+            TextInput:
+                id: username_input
+                text: root.username or ''
+                hint_text: 'username'
+                multiline: False
+                on_text: root.username = self.text.strip()
+            HeaderLabel:
+                text: 'Password'
+            TextInput:
+                id: password_input
+                password: True
+                hint_text: 'password'
+                multiline: False
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            spacing: dp(8)
+            CheckBox:
+                id: remember_cb
+                active: True
+                size_hint_x: None
+                width: dp(32)
+            BodyLabel:
+                text: 'Remember me'
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+        PrimaryButton:
+            text: 'Login'
+            on_release: root.do_login(password_input.text, remember_cb.active)
+        SecondaryButton:
+            text: 'Login as Guest'
+            on_release: root.login_guest()
+        CaptionLabel:
+            text: root.status or ''
+
+# Settings Screen
+<SettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(12)
+        spacing: dp(10)
+        TitleLabel:
+            text: 'Settings'
+            size_hint_y: None
+            height: dp(40)
+        # Make content scrollable to be safe on small screens
+        ScrollView:
+            do_scroll_x: False
+            bar_width: dp(4)
+            GridLayout:
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(8)
+                BodyLabel:
+                    id: info
+                    text: root.info_text or ''
+                    size_hint_y: None
+                    height: self.texture_size[1] + dp(8)
+                    text_size: self.width, None
+                CaptionLabel:
+                    id: last_status
+                    text: ('Last: ' + root.last_status) if root.last_status else ''
+                    size_hint_y: None
+                    height: (self.texture_size[1] + dp(8)) if self.text else 0
+                    text_size: self.width, None
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(8)
+                    PrimaryButton:
+                        text: 'Update DB (Download)'
+                        on_release: root.do_download()
+                    PrimaryButton:
+                        id: upload_btn
+                        text: 'Post DB (Upload)'
+                        disabled: not root.can_upload
+                        opacity: 1 if root.can_upload else 0
+                        size_hint_x: None
+                        width: dp(160) if root.can_upload else 0
+                        on_release: root.do_upload() if root.can_upload else None
+                SecondaryButton:
+                    text: 'Logout'
+                    size_hint_y: None
+                    height: dp(48)
+                    on_release: root.do_logout()
