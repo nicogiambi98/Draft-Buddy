@@ -13,7 +13,7 @@ import requests
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition, SlideTransition
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, NumericProperty, DictProperty, ObjectProperty
+from kivy.properties import StringProperty, ListProperty, NumericProperty, DictProperty, ObjectProperty, BooleanProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
@@ -2240,6 +2240,17 @@ class BingoScreen(Screen):
     taken = DictProperty({})  # {'rows':[bool]*3,'cols':[bool]*3,'diags':[bool]*2,'full': bool}
     winners = DictProperty({})  # {'rows':[pid or None]*3,...,'full': pid or None}
 
+    def refresh_all(self):
+        # Reload persistent state and players, then redraw everything
+        try:
+            self._load_state()
+        except Exception:
+            pass
+        try:
+            self.refresh_from_db()
+        except Exception:
+            pass
+
     def on_kv_post(self, base_widget):
         # Load data
         self._ensure_achievements()
@@ -2953,6 +2964,11 @@ class LoginScreen(Screen):
             })
             # Go to main tab and show bottom nav
             app = App.get_running_app()
+            try:
+                if app:
+                    app.refresh_auth_cache()
+            except Exception:
+                pass
             if app and app.root:
                 sm = app.root.ids.sm
                 sm.current = 'players'
@@ -3093,6 +3109,11 @@ class SettingsScreen(Screen):
     def do_logout(self):
         clear_auth()
         app = App.get_running_app()
+        try:
+            if app:
+                app.refresh_auth_cache()
+        except Exception:
+            pass
         if app and app.root:
             try:
                 app.root.ids.sm.current = 'login'
@@ -3238,6 +3259,28 @@ class SettingsScreen(Screen):
                     except Exception:
                         pass
             self._replace_db_with_file(path)
+            # After DB update, reset Bingo persistent state so downloaded DB view reflects prior server state
+            try:
+                from kivy.app import App as _App
+                app = _App.get_running_app()
+                if app and app.root:
+                    # Delete bingo_state.json if present
+                    try:
+                        from kivy.factory import Factory as _Factory
+                    except Exception:
+                        _Factory = None
+                    try:
+                        # Resolve path via BingoScreen helper
+                        b = app.root.ids.sm.get_screen('bingo')
+                        p = b._state_path()
+                        if os.path.exists(p):
+                            os.remove(p)
+                        # Reload bingo state and UI
+                        b.refresh_all()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             dur_ms = int((time.time() - start_ts) * 1000)
             src = "public" if used_public else "private"
             # Post-apply sanity: count some rows to help diagnose
@@ -3606,6 +3649,25 @@ class EventsApp(App):
         'warning': (1.00, 0.75, 0.00, 1),
         'error': (0.85, 0.22, 0.22, 1),
     })
+    # Reactive auth cache to drive UI bindings
+    auth_role = StringProperty('guest')
+    auth_username = StringProperty('')
+    is_mgr = BooleanProperty(False)
+
+    def refresh_auth_cache(self):
+        try:
+            auth = load_auth() or {}
+            role = (auth.get('role') or '').strip().lower()
+            uname = (auth.get('username') or '').strip()
+            # Fallback: username prefix
+            if role != 'manager' and uname.lower().startswith('manager'):
+                role = 'manager'
+            self.auth_role = role or 'guest'
+            self.auth_username = uname
+            self.is_mgr = bool(self.auth_role == 'manager' or self.auth_username.lower().startswith('manager'))
+        except Exception:
+            self.auth_role = 'guest'
+            self.auth_username = ''
 
     def build(self):
         Builder.load_file("ui.kv")
@@ -3657,6 +3719,11 @@ class EventsApp(App):
                 root.ids.bottomnav.disabled = True
             except Exception:
                 pass
+        # Refresh auth cache to drive UI bindings
+        try:
+            self.refresh_auth_cache()
+        except Exception:
+            pass
         # Prefer the keyboard to overlap the UI (avoid panning the whole page)
         try:
             # below_target keeps the focused widget visible without moving the whole layout
@@ -3676,7 +3743,12 @@ class EventsApp(App):
         return root
 
     def is_manager(self):
-        return _is_manager()
+        try:
+            role = (self.auth_role or '').strip().lower()
+            uname = (self.auth_username or '').strip().lower()
+            return bool(role == 'manager' or uname.startswith('manager'))
+        except Exception:
+            return _is_manager()
 
     def show_toast(self, message: str, timeout: float = 2.0):
         """Show a lightweight toast message at the bottom center, auto-dismiss."""
