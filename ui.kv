@@ -593,9 +593,9 @@
                     size_hint_x: None
                     width: dp(120)
                     height: dp(38)
-                    disabled: not app.is_manager()
-                    opacity: 1 if app.is_manager() else 0.6
-                    on_release: root.close_event() if app.is_manager() else None
+                    disabled: not app.is_mgr
+                    opacity: 1 if app.is_mgr else 0.6
+                    on_release: root.close_event() if app.is_mgr else None
             BoxLayout:
                 size_hint_y: None
                 height: dp(38)
@@ -624,15 +624,15 @@
             height: dp(56)
             SecondaryButton:
                 text: "Previous Round"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.prev_round_view() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.prev_round_view() if app.is_mgr else None
             PrimaryButton:
                 id: next_btn
                 text: "Next Round"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.next_round() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.next_round() if app.is_mgr else None
             SecondaryButton:
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
@@ -712,19 +712,19 @@
             height: dp(48)
             Button:
                 text: "Randomize again"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.randomize() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.randomize() if app.is_mgr else None
             Button:
                 text: "Begin Round 1"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.confirm_and_begin() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.confirm_and_begin() if app.is_mgr else None
             Button:
                 text: "Close event"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.close_event_reset() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.close_event_reset() if app.is_mgr else None
 
 <StandingsScreen>:
     BoxLayout:
@@ -757,9 +757,9 @@
             height: dp(48)
             Button:
                 text: "Back to Last Round"
-                disabled: not app.is_manager()
-                opacity: 1 if app.is_manager() else 0.6
-                on_release: root.back_to_last_round() if app.is_manager() else None
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.back_to_last_round() if app.is_mgr else None
             Button:
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
@@ -790,7 +790,9 @@
                 text: 'Close League'
                 size_hint_x: None
                 width: dp(140)
-                on_release: root.primary_action()
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.primary_action() if app.is_mgr else None
         # Scoreboard grid
         ScrollView:
             id: league_sv
