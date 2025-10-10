@@ -2678,16 +2678,40 @@ def _install_dns_fallback_for_host(hostname: str):
             return
         except Exception:
             pass
-        # Resolve via DoH (Cloudflare)
+        # Resolve via DoH (Cloudflare) without relying on device DNS
+        ips = []
         try:
             url = f"https://cloudflare-dns.com/dns-query?name={hostname}&type=A"
             r = requests.get(url, headers={"accept": "application/dns-json"}, timeout=6)
-            data = r.json() if r.status_code == 200 else {}
-            answers = data.get('Answer', []) if isinstance(data, dict) else []
-            ips = [a.get('data') for a in answers if isinstance(a, dict) and a.get('type') == 1 and a.get('data')]
-            ips = [ip for ip in ips if ip]
+            if r.status_code == 200:
+                data = r.json()
+                answers = data.get('Answer', []) if isinstance(data, dict) else []
+                ips = [a.get('data') for a in answers if isinstance(a, dict) and a.get('type') == 1 and a.get('data')]
         except Exception:
-            ips = []
+            pass
+        # Try Cloudflare by IP (1.1.1.1) with Host header and verify=False
+        if not ips:
+            try:
+                url = f"https://1.1.1.1/dns-query?name={hostname}&type=A"
+                r = requests.get(url, headers={"accept": "application/dns-json", "host": "cloudflare-dns.com"}, timeout=6, verify=False)
+                if r.status_code == 200:
+                    data = r.json()
+                    answers = data.get('Answer', []) if isinstance(data, dict) else []
+                    ips = [a.get('data') for a in answers if isinstance(a, dict) and a.get('type') == 1 and a.get('data')]
+            except Exception:
+                pass
+        # Try Google DoH by IP as a last resort
+        if not ips:
+            try:
+                url = f"https://8.8.8.8/resolve?name={hostname}&type=A"
+                r = requests.get(url, headers={"accept": "application/dns-json", "host": "dns.google"}, timeout=6, verify=False)
+                if r.status_code == 200:
+                    data = r.json()
+                    answers = data.get('Answer', []) if isinstance(data, dict) else []
+                    ips = [a.get('data') for a in answers if isinstance(a, dict) and a.get('type') == 1 and a.get('data')]
+            except Exception:
+                pass
+        ips = [ip for ip in ips if ip]
         if not ips:
             return  # nothing we can do; keep original behavior
         orig_getaddrinfo = socket.getaddrinfo
