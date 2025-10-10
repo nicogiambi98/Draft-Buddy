@@ -1,0 +1,8 @@
+Host bastione
+  HostName backdomainddnsnet
+  User jumpuser
+
+Host draftbuddy
+  HostName 192.168.3.55
+  User debian
+  ProxyJump bastione
