@@ -1116,6 +1116,9 @@
         SecondaryButton:
             text: 'Login as Guest'
             on_release: root.login_guest()
+        SecondaryButton:
+            text: 'Diagnose connection'
+            on_release: root.diagnose_connection()
         CaptionLabel:
             text: root.status or ''
 

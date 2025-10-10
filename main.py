@@ -2734,7 +2734,7 @@ class LoginScreen(Screen):
             try:
                 h = requests.get(f"{base}/health", timeout=8)
                 return h.status_code == 200
-            except requests.exceptions.SSLError:
+            except requests.exceptions.SSLError as se:
                 try:
                     h = requests.get(f"{base}/health", timeout=8, verify=False)
                     return h.status_code == 200
@@ -2750,18 +2750,25 @@ class LoginScreen(Screen):
                     'username': user,
                     'password': password,
                     'remember': bool(remember),
-                }, timeout=20)
+                }, timeout=25)
             except requests.exceptions.SSLError:
                 # Retry without SSL verification on Android devices missing some CAs
                 resp = requests.post(url, json={
                     'username': user,
                     'password': password,
                     'remember': bool(remember),
-                }, timeout=20, verify=False)
+                }, timeout=25, verify=False)
 
             if resp.status_code != 200:
-                self.status = f"Login failed: {resp.status_code}"
-                # If 401, it's likely wrong creds; otherwise generic
+                # Include short server message if any
+                extra = ''
+                try:
+                    t = resp.text
+                    if t:
+                        extra = f" - {t[:160]}"
+                except Exception:
+                    pass
+                self.status = f"Login failed: {resp.status_code}{extra}"
                 App.get_running_app().show_toast('Invalid credentials' if resp.status_code == 401 else f'Login failed: {resp.status_code}')
                 return
             data = resp.json()
@@ -2794,14 +2801,14 @@ class LoginScreen(Screen):
                     pass
             app.show_toast('Logged in')
         except requests.exceptions.Timeout as e:
-            self.status = 'Network timeout'
+            self.status = f'Network timeout: {type(e).__name__}'
             App.get_running_app().show_toast('Network timeout while logging in')
         except requests.exceptions.ConnectionError as e:
-            hint = '' if pre_ok else ' (server unreachable?)'
-            self.status = 'Network error'
+            hint = '' if _preflight() else ' (server unreachable?)'
+            self.status = f'Network error: {type(e).__name__}: {e}'
             App.get_running_app().show_toast('Network error while logging in' + hint)
-        except Exception:
-            self.status = 'Network error'
+        except Exception as e:
+            self.status = f'Error: {type(e).__name__}: {e}'
             App.get_running_app().show_toast('Network error while logging in')
 
     def login_guest(self):
@@ -2811,6 +2818,86 @@ class LoginScreen(Screen):
             pass
         # Use remember=True by default for guest for convenience
         self.do_login('guest', True)
+
+    def diagnose_connection(self):
+        # Run a few simple checks and show results in a popup and status
+        try:
+            import socket
+            import traceback
+        except Exception:
+            socket = None
+        base = _get_base_url(None)
+        lines = []
+        lines.append(f"Base URL: {base}")
+        # Platform hint
+        try:
+            from kivy.utils import platform as _plat
+            lines.append(f"Platform: {_plat}")
+        except Exception:
+            pass
+        # DNS
+        try:
+            host = base.split('://', 1)[-1].split('/', 1)[0]
+            addrs = []
+            if socket:
+                infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+                for fam, st, pr, cn, sa in infos:
+                    addrs.append(sa[0])
+            uniq = []
+            for a in addrs:
+                if a not in uniq:
+                    uniq.append(a)
+            lines.append(f"DNS: {host} -> {', '.join(uniq) if uniq else '(no results)'}")
+        except Exception as e:
+            lines.append(f"DNS error: {type(e).__name__}: {e}")
+        # HTTPS /health
+        import time as _t
+        try:
+            t0 = _t.time()
+            r = requests.get(f"{base}/health", timeout=8)
+            dt = int((_t.time() - t0) * 1000)
+            lines.append(f"HTTPS /health: {r.status_code} in {dt} ms")
+        except requests.exceptions.SSLError as e:
+            lines.append(f"HTTPS /health SSL error: {e}")
+            # Retry insecure
+            try:
+                t0 = _t.time()
+                r = requests.get(f"{base}/health", timeout=8, verify=False)
+                dt = int((_t.time() - t0) * 1000)
+                lines.append(f"HTTPS /health (insecure): {r.status_code} in {dt} ms")
+            except Exception as e2:
+                lines.append(f"HTTPS /health (insecure) failed: {type(e2).__name__}: {e2}")
+        except requests.exceptions.ConnectionError as e:
+            lines.append(f"HTTPS /health connection error: {e}")
+        except Exception as e:
+            lines.append(f"HTTPS /health error: {type(e).__name__}: {e}")
+        # Summarize
+        report = "\n".join(lines)
+        self.status = lines[-1] if lines else ""
+        # Popup
+        try:
+            from kivy.uix.boxlayout import BoxLayout
+            from kivy.uix.label import Label
+            from kivy.uix.button import Button
+            from kivy.uix.scrollview import ScrollView
+            from kivy.uix.popup import Popup
+            from kivy.metrics import dp
+        except Exception:
+            return
+        box = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
+        sv = ScrollView(size_hint=(1, 1))
+        lbl = Label(text=report, size_hint_y=None, halign='left', valign='top')
+        lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(12), None)))
+        lbl.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+        sv.add_widget(lbl)
+        box.add_widget(sv)
+        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        close = Button(text='Close')
+        btns.add_widget(close)
+        box.add_widget(btns)
+        popup = Popup(title='Network diagnostics', content=box, size_hint=(0.9, 0.8))
+        close.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
 
 
 class SettingsScreen(Screen):
