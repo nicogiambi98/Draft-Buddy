@@ -682,6 +682,16 @@ class MatchRow(BoxLayout):
         # cycles 0 -> 1 -> 2 -> 0 and writes to DB
         if self.bye:
             return
+        # Guests cannot submit match results
+        try:
+            if not _is_manager():
+                app = App.get_running_app()
+                if app:
+                    app.show_toast('Guests cannot submit results')
+                return
+        except Exception:
+            if not _is_manager():
+                return
         if side == 1:
             self.score1 = (self.score1 + 1) % 3
             DB.execute("UPDATE matches SET score_p1 = ? WHERE id = ?", (self.score1, self.match_id))
@@ -714,6 +724,13 @@ class PlayersScreen(Screen):
         self.refresh()
 
     def open_add_player(self):
+        # Guests cannot add players
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot add players')
+            except Exception:
+                pass
+            return
         # Create a lightweight popup to add a new player without leaving the list
         try:
             from kivy.uix.textinput import TextInput
@@ -759,6 +776,16 @@ class PlayersScreen(Screen):
                 pass
 
     def _save_new_player_from_popup(self, name, popup):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot add players')
+            except Exception:
+                pass
+            try:
+                popup.dismiss()
+            except Exception:
+                pass
+            return
         name = (name or '').strip()
         if not name:
             try:
@@ -807,6 +834,12 @@ class PlayersScreen(Screen):
             btn_del.font_size = '18sp'
         except Exception:
             pass
+        # Disable delete for guests
+        try:
+            btn_del.disabled = not _is_manager()
+            btn_del.opacity = 1 if _is_manager() else 0.5
+        except Exception:
+            pass
         btn_del.bind(on_release=lambda inst, _pid=pid, _name=name: self.delete_player(_pid, _name))
         row.add_widget(lbl)
         row.add_widget(btn_del)
@@ -828,6 +861,12 @@ class PlayersScreen(Screen):
             self._add_player_row(pid, name)
 
     def delete_player(self, pid, name):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot delete players')
+            except Exception:
+                pass
+            return
         # deny delete if player is in any active event
         row = DB.execute("SELECT COUNT(*) FROM events e JOIN event_players ep ON e.id=ep.event_id WHERE e.status='active' AND ep.player_id=?", (pid,)).fetchone()
         if row and row[0] > 0:
@@ -850,6 +889,12 @@ class PlayersScreen(Screen):
 
 class NewPlayerScreen(Screen):
     def save_player(self, name):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot add players')
+            except Exception:
+                pass
+            return
         if not name or not name.strip():
             return
         fullname = name.strip()
@@ -886,6 +931,12 @@ class NewPlayerScreen(Screen):
 
 class CreateEventDetailsScreen(Screen):
     def next_to_players(self, name, etype, rounds, round_time):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot create events')
+            except Exception:
+                pass
+            return
         # sanitize and store on CreateEventScreen
         name = (name or '').strip() or f"Event {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         etype = (etype or 'draft').strip() or 'draft'
@@ -1330,6 +1381,13 @@ class EventScreen(Screen):
         self.refresh_matches()
 
     def prev_round_view(self):
+        # Guests cannot navigate rounds
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot change round view')
+            except Exception:
+                pass
+            return
         # Navigate to previous round view or to seating if at round 1
         r = self._display_round()
         if r <= 1:
@@ -1377,6 +1435,12 @@ class EventScreen(Screen):
             pass
 
     def next_round(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot advance rounds')
+            except Exception:
+                pass
+            return
         # Ensure current matches saved (they are updated live on clicks)
         # Compute next pairings and insert matches for round+1 or finish
         e = DB.execute("SELECT rounds, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
@@ -1402,6 +1466,12 @@ class EventScreen(Screen):
         self.refresh_matches()
 
     def close_event(self, abort_current_round=True):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot close events')
+            except Exception:
+                pass
+            return
         # stop timer when closing event
         try:
             self.stop_timer()
@@ -1477,6 +1547,12 @@ class SeatingScreen(Screen):
             pass
 
     def _create_event_if_needed(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot create events')
+            except Exception:
+                pass
+            return
         if getattr(self, 'event_id', 0):
             return
         # Create the event row and event_players from current seating
@@ -1524,6 +1600,12 @@ class SeatingScreen(Screen):
             cont.add_widget(Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1)))
 
     def confirm_and_begin(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot start events')
+            except Exception:
+                pass
+            return
         # If event already exists (created when arriving to seating), handle per current state
         if getattr(self, 'event_id', 0):
             # Read event state
@@ -1583,6 +1665,12 @@ class SeatingScreen(Screen):
         self.manager.current = "event"
 
     def close_event_reset(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot close events')
+            except Exception:
+                pass
+            return
         # Close the event from seating: wipe all match results and set all players to 0 points, then mark closed
         if not getattr(self, 'event_id', 0):
             return
@@ -1801,6 +1889,12 @@ class LeagueScreen(Screen):
 
     def primary_action(self):
         """Main button depends on whether any active league exists, regardless of selection."""
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot manage leagues')
+            except Exception:
+                pass
+            return
         try:
             from db import DB
             # Check if there is any active league (end_ts IS NULL)
@@ -1840,6 +1934,12 @@ class LeagueScreen(Screen):
             self.close_current_league()
 
     def prompt_new_league(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot start leagues')
+            except Exception:
+                pass
+            return
         # Popup to insert the league name
         try:
             from kivy.uix.textinput import TextInput
@@ -1872,6 +1972,12 @@ class LeagueScreen(Screen):
             self.create_new_league(None)
 
     def create_new_league(self, name=None):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot start leagues')
+            except Exception:
+                pass
+            return
         try:
             from db import DB
             now = int(time.time())
@@ -1940,6 +2046,12 @@ class LeagueScreen(Screen):
         popup.open()
 
     def close_current_league(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot close leagues')
+            except Exception:
+                pass
+            return
         try:
             from db import DB
             now = int(time.time())
@@ -2138,6 +2250,30 @@ class BingoScreen(Screen):
         self._render_grid()
         self._update_status()
 
+    def on_pre_enter(self, *args):
+        # Refresh from DB each time we enter, so downloads are reflected
+        try:
+            self.refresh_from_db()
+        except Exception:
+            pass
+
+    def refresh_from_db(self):
+        # Reload players and reconcile current selection, then redraw UI
+        try:
+            self._load_players()
+            self._render_players_list()
+            # If current player no longer exists, reset selection
+            cur = int(self.current_player_id) if self.current_player_id else 0
+            if not any(int(p.get('id', 0)) == cur for p in self._players):
+                self.current_player_id = 0
+                self.current_player_name = ''
+                self._select_default_player()
+            # Redraw grid and status
+            self._render_grid()
+            self._update_status()
+        except Exception:
+            pass
+
     # ---- Paths and persistence ----
     def _achievements_path(self):
         # Always read the bundled project file so user edits to achievements.json are reflected
@@ -2261,16 +2397,24 @@ class BingoScreen(Screen):
             btn.height = dp(120)
             btn.background_normal = ''
             btn.background_down = ''
-            btn.disabled = done
+            # Guests cannot update bingo cells
+            can_edit = _is_manager()
+            btn.disabled = done or (not can_edit)
             # Color: green if done, dark gray otherwise; lighten when disabled handled by kv default
             btn.background_color = (0.16,0.64,0.28,1) if done else (0.26,0.26,0.26,1)
-            if not done:
+            if (not done) and can_edit:
                 def _on_press(_i=idx, _txt=txt):
                     return lambda *_: self._confirm_mark(_i, _txt)
                 btn.bind(on_release=_on_press())
             grid.add_widget(btn)
 
     def _confirm_mark(self, idx, ach_text):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot update bingo')
+            except Exception:
+                pass
+            return
         if not self.current_player_id:
             return
         name = self.current_player_name or str(self.current_player_id)
@@ -2504,6 +2648,12 @@ class BingoScreen(Screen):
         popup.open()
 
     def reset_progress(self):
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot reset bingo')
+            except Exception:
+                pass
+            return
         # Confirm (wrap long text to avoid overflow)
         content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(12))
         # Scrollable, wrapping message
@@ -2704,6 +2854,19 @@ def clear_auth():
 def _get_base_url(auth: dict | None) -> str:
     # Fixed, non-configurable base URL per requirements
     return "https://draftbuddy.hackthep.it"
+
+
+def _is_manager() -> bool:
+    """Return True if the current user is a manager.
+    Uses saved auth role and username prefix fallback (username startswith 'manager').
+    """
+    try:
+        auth = load_auth() or {}
+        role = (auth.get('role') or '').strip().lower()
+        uname = (auth.get('username') or '').strip().lower()
+        return bool(role == 'manager' or uname.startswith('manager'))
+    except Exception:
+        return False
 
 
 class LoginScreen(Screen):
@@ -3093,7 +3256,21 @@ class SettingsScreen(Screen):
             except Exception:
                 counts = ""
             self.last_status = f"Downloaded {bytes_written} bytes from {src} in {dur_ms} ms{counts}\nURL: {attempted_urls[-1]}"
-            App.get_running_app().show_toast('Download complete')
+            app = App.get_running_app()
+            if app:
+                app.show_toast('Download complete')
+                try:
+                    # Proactively refresh Bingo screen to reflect new DB
+                    sm = app.root.ids.sm if app.root and hasattr(app.root, 'ids') else None
+                    if sm:
+                        try:
+                            scr = sm.get_screen('bingo')
+                        except Exception:
+                            scr = None
+                        if scr and hasattr(scr, 'refresh_from_db'):
+                            scr.refresh_from_db()
+                except Exception:
+                    pass
         except Exception as e:
             self.last_status = 'Network error during download'
             App.get_running_app().show_toast('Network error during download')
@@ -3497,6 +3674,9 @@ class EventsApp(App):
         # Debounce storage for back handling
         self._back_debounce_until = 0
         return root
+
+    def is_manager(self):
+        return _is_manager()
 
     def show_toast(self, message: str, timeout: float = 2.0):
         """Show a lightweight toast message at the bottom center, auto-dismiss."""

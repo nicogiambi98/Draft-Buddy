@@ -316,7 +316,9 @@
                 size_hint_x: None
                 width: dp(140)
                 height: dp(40)
-                on_release: root.open_add_player()
+                disabled: not app.is_manager()
+                opacity: 1 if app.is_manager() else 0.6
+                on_release: root.open_add_player() if app.is_manager() else None
 
         BoxLayout:
             size_hint_y: None
@@ -532,7 +534,9 @@
                 size_hint_x: None
                 width: dp(140)
                 height: dp(40)
-                on_release: root.manager.current = "createevent_details"
+                disabled: not app.is_manager()
+                opacity: 1 if app.is_manager() else 0.6
+                on_release: root.manager.current = "createevent_details" if app.is_manager() else None
         ScrollView:
             canvas.after:
                 Color:
