@@ -10,7 +10,7 @@ source.include_exts = py,kv,png,jpg,jpeg,svg,wav,ogg,mp3,txt,json
 source.include_patterns = assets/*
 
 # Pin stack compatible with Cython 0.29.x
-requirements = python3,kivy==2.2.1,sqlite3,pyjnius==1.4.2,cython==0.29.36
+requirements = python3,kivy==2.2.1,sqlite3,pyjnius==1.4.2,cython==0.29.36,requests,certifi
 
 orientation = portrait
 fullscreen = 0
@@ -25,6 +25,9 @@ warn_on_root = 1
 # Android API targets
 android.api = 31
 android.minapi = 21
+
+# Required permissions for network access
+android.permissions = INTERNET, ACCESS_NETWORK_STATE
 
 # Force single-arch while stabilizing
 android.archs = arm64-v8a

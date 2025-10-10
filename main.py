@@ -2728,15 +2728,41 @@ class LoginScreen(Screen):
             App.get_running_app().show_toast('Please fill username and password')
             return
         url = f"{base}/auth/login"
+
+        # Optional preflight to provide clearer feedback if server is unreachable
+        def _preflight():
+            try:
+                h = requests.get(f"{base}/health", timeout=8)
+                return h.status_code == 200
+            except requests.exceptions.SSLError:
+                try:
+                    h = requests.get(f"{base}/health", timeout=8, verify=False)
+                    return h.status_code == 200
+                except Exception:
+                    return False
+            except Exception:
+                return False
+
         try:
-            resp = requests.post(url, json={
-                'username': user,
-                'password': password,
-                'remember': bool(remember),
-            }, timeout=15)
+            pre_ok = _preflight()
+            try:
+                resp = requests.post(url, json={
+                    'username': user,
+                    'password': password,
+                    'remember': bool(remember),
+                }, timeout=20)
+            except requests.exceptions.SSLError:
+                # Retry without SSL verification on Android devices missing some CAs
+                resp = requests.post(url, json={
+                    'username': user,
+                    'password': password,
+                    'remember': bool(remember),
+                }, timeout=20, verify=False)
+
             if resp.status_code != 200:
                 self.status = f"Login failed: {resp.status_code}"
-                App.get_running_app().show_toast('Invalid credentials')
+                # If 401, it's likely wrong creds; otherwise generic
+                App.get_running_app().show_toast('Invalid credentials' if resp.status_code == 401 else f'Login failed: {resp.status_code}')
                 return
             data = resp.json()
             token = data.get('access_token')
@@ -2767,7 +2793,14 @@ class LoginScreen(Screen):
                 except Exception:
                     pass
             app.show_toast('Logged in')
-        except Exception as e:
+        except requests.exceptions.Timeout as e:
+            self.status = 'Network timeout'
+            App.get_running_app().show_toast('Network timeout while logging in')
+        except requests.exceptions.ConnectionError as e:
+            hint = '' if pre_ok else ' (server unreachable?)'
+            self.status = 'Network error'
+            App.get_running_app().show_toast('Network error while logging in' + hint)
+        except Exception:
             self.status = 'Network error'
             App.get_running_app().show_toast('Network error while logging in')
 
