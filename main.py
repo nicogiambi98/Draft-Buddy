@@ -2678,8 +2678,31 @@ def _install_dns_fallback_for_host(hostname: str):
             return
         except Exception:
             pass
-        # Resolve via DoH (Cloudflare) without relying on device DNS
+        # First try Android Java resolver via pyjnius (uses device resolver)
         ips = []
+        try:
+            import importlib
+            _jnius = importlib.import_module('jnius')
+            autoclass = getattr(_jnius, 'autoclass')
+            InetAddress = autoclass('java.net.InetAddress')
+            arr = InetAddress.getAllByName(hostname)
+            # Convert Java array to Python list if needed
+            try:
+                iterable = list(arr)
+            except Exception:
+                iterable = [arr]
+            for ia in iterable:
+                try:
+                    ips.append(str(ia.getHostAddress()))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Resolve via DoH (Cloudflare) without relying on device DNS if still empty
+        if ips:
+            ips = [ip for ip in ips if ip]
+        else:
+            ips = []
         try:
             url = f"https://cloudflare-dns.com/dns-query?name={hostname}&type=A"
             r = requests.get(url, headers={"accept": "application/dns-json"}, timeout=6)
