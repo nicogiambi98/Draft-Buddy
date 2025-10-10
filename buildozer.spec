@@ -25,27 +25,8 @@ android.archs = arm64-v8a
 p4a.ndk_api = 21
 # Ensure p4a uses Cython 0.29.x and only one arch
 p4a.cython = 0.29.36
-p4a.extra_args = --arch=arm64-v8a --cython=0.29.36
+p4a.extra_args = --arch=arm64-v8a
 
 [buildozer]
 log_level = 2
 warn_on_root = 1
-
-[app:android]
-# Android API targets
-android.api = 31
-android.minapi = 21
-
-# Required permissions for network access
-android.permissions = INTERNET, ACCESS_NETWORK_STATE
-
-# Force single-arch while stabilizing
-android.archs = arm64-v8a
-p4a.ndk_api = 21
-
-# Ensure p4a uses Cython 0.29.x and only one arch
-p4a.cython = 0.29.36
-p4a.extra_args = --arch=arm64-v8a --cython=0.29.36
-
-# Keep this commented unless you need it
-# p4a.branch = stable
