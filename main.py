@@ -2797,7 +2797,12 @@ class SettingsScreen(Screen):
             # Allow upload if authenticated and either server-reported role is manager or username starts with 'manager'
             uname = (user or '').strip().lower()
             self.can_upload = bool(have_token and (role == 'manager' or uname.startswith('manager')))
-            self.info_text = f"Server: {base}\nUser: {user}\nRole: {role}\nManager ID: {mid}\nAuthenticated: {'yes' if have_token else 'no'}"
+            try:
+                from db import get_db_path as _gdp
+                dbp = _gdp()
+            except Exception:
+                dbp = '(unknown)'
+            self.info_text = f"Server: {base}\nUser: {user}\nRole: {role}\nManager ID: {mid}\nAuthenticated: {'yes' if have_token else 'no'}\nDB Path: {dbp}"
         except Exception:
             self.info_text = ""
             self.can_upload = False
@@ -2816,10 +2821,43 @@ class SettingsScreen(Screen):
         app.show_toast('Logged out')
 
     def _replace_db_with_file(self, tmp_path: str):
+        """Apply a downloaded DB file to the running app.
+        Prefer a live copy into the existing SQLite connection to avoid
+        invalidating imported DB references. Fallback to atomic file
+        replacement + reload if needed.
+        """
+        # 1) Try live copy via sqlite3 backup API
+        try:
+            import sqlite3 as _sqlite
+            import db as _dbmod
+            src = _sqlite.connect(tmp_path)
+            try:
+                # Copy contents of src into the existing destination connection
+                # This keeps the same connection object alive for all callers.
+                src.backup(_dbmod.DB)
+                try:
+                    src.close()
+                except Exception:
+                    pass
+                # Remove temp file after successful copy
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                App.get_running_app().show_toast('Database updated')
+                return
+            finally:
+                try:
+                    src.close()
+                except Exception:
+                    pass
+        except Exception:
+            # Proceed to fallback
+            pass
+        # 2) Fallback: atomic file replace + reload (may invalidate old DB refs)
         try:
             target = get_db_path()
             tmp = target + '.tmpdl'
-            # Move to tmp then atomically replace
             if os.path.exists(tmp):
                 try:
                     os.remove(tmp)
@@ -2827,7 +2865,6 @@ class SettingsScreen(Screen):
                     pass
             os.replace(tmp_path, tmp)
             os.replace(tmp, target)
-            # Reload global DB connection so the app sees the new data immediately
             try:
                 from db import reload_db
                 reload_db()
@@ -2920,7 +2957,22 @@ class SettingsScreen(Screen):
             self._replace_db_with_file(path)
             dur_ms = int((time.time() - start_ts) * 1000)
             src = "public" if used_public else "private"
-            self.last_status = f"Downloaded {bytes_written} bytes from {src} in {dur_ms} ms\nURL: {attempted_urls[-1]}"
+            # Post-apply sanity: count some rows to help diagnose
+            counts = ""
+            try:
+                import db as _dbmod
+                try:
+                    pcount = _dbmod.DB.execute("SELECT COUNT(*) FROM players").fetchone()[0]
+                except Exception:
+                    pcount = 'n/a'
+                try:
+                    ecount = _dbmod.DB.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+                except Exception:
+                    ecount = 'n/a'
+                counts = f" | players={pcount} events={ecount}"
+            except Exception:
+                counts = ""
+            self.last_status = f"Downloaded {bytes_written} bytes from {src} in {dur_ms} ms{counts}\nURL: {attempted_urls[-1]}"
             App.get_running_app().show_toast('Download complete')
         except Exception as e:
             self.last_status = 'Network error during download'
@@ -2935,19 +2987,46 @@ class SettingsScreen(Screen):
             App.get_running_app().show_toast('Login as manager to upload')
             return
         url = f"{base}/db/upload"
-        headers = {'Authorization': f'Bearer {token}'}
+        # Be explicit with headers to avoid some proxy quirks
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Connection': 'close',
+            'Expect': ''
+        }
         db_path = get_db_path()
+        # Ensure DB file exists and is readable
         try:
             size = os.path.getsize(db_path)
-        except Exception:
-            size = None
+        except FileNotFoundError:
+            self.last_status = f"DB file not found: {db_path}"
+            App.get_running_app().show_toast('Database file not found')
+            return
+        except Exception as e:
+            self.last_status = f"Cannot access DB file: {db_path} - {e}"
+            App.get_running_app().show_toast('Cannot access database file')
+            return
 
         def _upload(verify=True):
             with open(db_path, 'rb') as f:
-                files = {'file': ('events.sqlite', f, 'application/octet-stream')}
+                files = {'file': (os.path.basename(db_path) or 'events.sqlite', f, 'application/octet-stream')}
                 return requests.post(url, headers=headers, files=files, timeout=60, verify=verify)
 
+        # Optional preflight to provide clearer feedback if server is unreachable
+        def _preflight():
+            try:
+                health = requests.get(f"{base}/health", timeout=8)
+                return health.status_code == 200
+            except requests.exceptions.SSLError:
+                try:
+                    health = requests.get(f"{base}/health", timeout=8, verify=False)
+                    return health.status_code == 200
+                except Exception:
+                    return False
+            except Exception:
+                return False
+
         try:
+            pre_ok = _preflight()
             start_ts = time.time()
             try:
                 resp = _upload(verify=True)
@@ -2978,9 +3057,17 @@ class SettingsScreen(Screen):
                     pass
                 self.last_status = f"Upload failed: {resp.status_code}{extra}\nURL: {url}"
                 App.get_running_app().show_toast(f'Upload failed: {resp.status_code}')
-        except Exception:
-            self.last_status = 'Network error during upload'
-            App.get_running_app().show_toast('Network error during upload')
+        except requests.exceptions.Timeout as e:
+            self.last_status = f"Network timeout during upload after {url}. {type(e).__name__}: {e}"
+            App.get_running_app().show_toast('Network timeout while uploading')
+        except requests.exceptions.ConnectionError as e:
+            hint = '' if pre_ok else ' (server unreachable - check internet/DNS or server status)'
+            self.last_status = f"Connection error during upload to {url}: {e}{hint}"
+            App.get_running_app().show_toast('Network error while uploading')
+        except Exception as e:
+            # Any other unexpected error
+            self.last_status = f"Error during upload: {type(e).__name__}: {e}\nURL: {url}"
+            App.get_running_app().show_toast('Network error while uploading')
 
 
 class BottomNav(BoxLayout):

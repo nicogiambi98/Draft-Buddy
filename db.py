@@ -12,16 +12,24 @@ except Exception:  # Allow importing outside Kivy (e.g., for tooling)
 
 
 def _get_persistent_db_path(filename: str = "events.db") -> str:
-    """Return a path under a persistent app data directory.
-    - On Android/iOS: use Kivy's App.user_data_dir which survives app updates.
-    - Elsewhere: use a folder in the user's home directory.
-    Also performs a one-time seed: if no DB exists at the persistent
-    location but a bundled copy exists alongside this file, copy it.
+    """Resolve the database path.
+    - Android/iOS: use the app sandbox (user_data_dir/ANDROID_PRIVATE/~/).
+    - Desktop (win/linux/macosx): store alongside the project (same folder as db.py).
+    - Fallback: use a per-user folder (~/.draft_buddy).
+    Also performs a one-time seed: if target doesn't exist but a bundled copy exists
+    at a different path, copy it.
     """
-    # Determine base persistent dir
+    # Determine platform first
+    try:
+        plat = platform if platform is not None else None
+    except Exception:
+        plat = None
+
+    # Determine base dir
     base_dir = None
-    # Prefer Kivy App.user_data_dir when available (after App has started)
-    if App is not None:
+
+    # On mobile, prefer Kivy App.user_data_dir when available
+    if plat in ('android', 'ios') and App is not None:
         try:
             app = App.get_running_app()
         except Exception:
@@ -31,12 +39,9 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
                 base_dir = app.user_data_dir
             except Exception:
                 base_dir = None
-    # If still not decided and running on Android, use p4a-provided env vars
+
+    # Platform-specific handling
     if not base_dir:
-        try:
-            plat = platform if platform is not None else None
-        except Exception:
-            plat = None
         if plat == 'android':
             # ANDROID_PRIVATE points to the app-internal files dir (persistent, no permissions needed)
             base_dir = os.environ.get('ANDROID_PRIVATE')
@@ -48,9 +53,15 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
         elif plat == 'ios':
             # On iOS, expanduser("~") is safe and points to app sandbox
             base_dir = os.path.expanduser('~')
-    # Final fallback for desktop/tools or unknown platforms
+        else:
+            # Desktop: keep DB next to the codebase (project directory)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Final fallback for unknown platforms
     if not base_dir:
         base_dir = os.path.join(os.path.expanduser("~"), ".draft_buddy")
+
+    # Ensure directory exists (may already exist for project dir)
     try:
         os.makedirs(base_dir, exist_ok=True)
     except Exception:
@@ -62,7 +73,7 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
     if not os.path.exists(target_path):
         bundled_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
         try:
-            if os.path.exists(bundled_path):
+            if os.path.exists(bundled_path) and os.path.abspath(bundled_path) != os.path.abspath(target_path):
                 shutil.copy2(bundled_path, target_path)
         except Exception:
             # Ignore seeding failures; we'll create an empty schema below
