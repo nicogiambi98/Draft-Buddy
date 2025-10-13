@@ -2313,34 +2313,161 @@ class BingoScreen(Screen):
             self.achievements = [f"Achievement {i+1}" for i in range(9)]
 
     def _load_state(self):
-        path = self._state_path()
+        """Load bingo state from the SQLite DB. If the bingo tables are empty
+        but a legacy bingo_state.json exists, import it once and remove the file.
+        Fallback to empty state on errors."""
+        # Defaults
+        self.bingo_state = {}
+        self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+        self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
         try:
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.bingo_state = data.get('players', {})
-                self.taken = data.get('taken', {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False})
-                self.winners = data.get('winners', {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None})
-            else:
-                self.bingo_state = {}
-                self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
-                self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+            from db import DB
+            c = DB.cursor()
+            # Check if tables exist
+            try:
+                c.execute("SELECT 1 FROM bingo_players LIMIT 1")
+                tables_ok = True
+            except Exception:
+                tables_ok = False
+            if not tables_ok:
+                return
+            # If empty, attempt legacy import
+            try:
+                cnt = c.execute("SELECT COUNT(*) FROM bingo_players").fetchone()[0]
+            except Exception:
+                cnt = 0
+            if cnt == 0:
+                try:
+                    path = self._state_path()
+                    if os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        players = data.get('players') or {}
+                        taken = data.get('taken') or self.taken
+                        winners = data.get('winners') or self.winners
+                        # Write import into DB
+                        for k, arr in players.items():
+                            try:
+                                pid = int(k)
+                                vals = [1 if bool(x) else 0 for x in (arr + [False]*9)[:9]]
+                                c.execute(
+                                    """
+                                    INSERT INTO bingo_players(player_id,c0,c1,c2,c3,c4,c5,c6,c7,c8)
+                                    VALUES(?,?,?,?,?,?,?,?,?,?)
+                                    """,
+                                    [pid] + vals
+                                )
+                            except Exception:
+                                pass
+                        # Meta row
+                        def _b(x):
+                            return 1 if bool(x) else 0
+                        rows = taken.get('rows',[False]*3)
+                        cols = taken.get('cols',[False]*3)
+                        diags = taken.get('diags',[False]*2)
+                        c.execute(
+                            """
+                            UPDATE bingo_meta SET
+                              row0=?, row1=?, row2=?,
+                              col0=?, col1=?, col2=?,
+                              diag0=?, diag1=?, full=?,
+                              win_row0=?, win_row1=?, win_row2=?,
+                              win_col0=?, win_col1=?, win_col2=?,
+                              win_diag0=?, win_diag1=?, win_full=?
+                            WHERE id=1
+                            """,
+                            [
+                                _b(rows[0]), _b(rows[1]), _b(rows[2]),
+                                _b(cols[0]), _b(cols[1]), _b(cols[2]),
+                                _b(diags[0]), _b(diags[1]), _b(taken.get('full')),
+                                (winners.get('rows',[None]*3)[0] if winners else None),
+                                (winners.get('rows',[None]*3)[1] if winners else None),
+                                (winners.get('rows',[None]*3)[2] if winners else None),
+                                (winners.get('cols',[None]*3)[0] if winners else None),
+                                (winners.get('cols',[None]*3)[1] if winners else None),
+                                (winners.get('cols',[None]*3)[2] if winners else None),
+                                (winners.get('diags',[None]*2)[0] if winners else None),
+                                (winners.get('diags',[None]*2)[1] if winners else None),
+                                (winners.get('full') if winners else None),
+                            ]
+                        )
+                        DB.commit()
+                        try:
+                            os.remove(path)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            # Load from DB into memory
+            for pid, c0,c1,c2,c3,c4,c5,c6,c7,c8 in c.execute("SELECT player_id,c0,c1,c2,c3,c4,c5,c6,c7,c8 FROM bingo_players").fetchall():
+                self.bingo_state[str(int(pid))] = [bool(c0),bool(c1),bool(c2),bool(c3),bool(c4),bool(c5),bool(c6),bool(c7),bool(c8)]
+            row = c.execute("SELECT row0,row1,row2,col0,col1,col2,diag0,diag1,full,win_row0,win_row1,win_row2,win_col0,win_col1,win_col2,win_diag0,win_diag1,win_full FROM bingo_meta WHERE id=1").fetchone()
+            if row:
+                r0,r1,r2,c0,c1,c2,d0,d1,full,wr0,wr1,wr2,wc0,wc1,wc2,wd0,wd1,wf = row
+                self.taken = {'rows':[bool(r0),bool(r1),bool(r2)], 'cols':[bool(c0),bool(c1),bool(c2)], 'diags':[bool(d0),bool(d1)], 'full': bool(full)}
+                self.winners = {'rows':[wr0,wr1,wr2], 'cols':[wc0,wc1,wc2], 'diags':[wd0,wd1], 'full': wf}
         except Exception:
-            self.bingo_state = {}
-            self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
-            self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+            # Leave defaults on error
+            pass
 
     def _save_state(self):
-        path = self._state_path()
+        """Persist current in-memory bingo state to SQLite DB."""
         try:
-            d = os.path.dirname(path)
-            if d and not os.path.exists(d):
-                os.makedirs(d, exist_ok=True)
-        except Exception:
-            pass
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump({'players': self.bingo_state, 'taken': self.taken, 'winners': self.winners}, f, ensure_ascii=False, indent=2)
+            from db import DB
+            c = DB.cursor()
+            # Upsert all players
+            for k, arr in (self.bingo_state or {}).items():
+                try:
+                    pid = int(k)
+                except Exception:
+                    continue
+                vals = [1 if bool(x) else 0 for x in (list(arr) + [False]*9)[:9]]
+                c.execute(
+                    """
+                    INSERT INTO bingo_players(player_id,c0,c1,c2,c3,c4,c5,c6,c7,c8)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(player_id) DO UPDATE SET
+                      c0=excluded.c0, c1=excluded.c1, c2=excluded.c2,
+                      c3=excluded.c3, c4=excluded.c4, c5=excluded.c5,
+                      c6=excluded.c6, c7=excluded.c7, c8=excluded.c8
+                    """,
+                    [pid] + vals
+                )
+            # Update meta
+            t = self.taken or {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
+            w = self.winners or {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
+            def _b(x):
+                return 1 if bool(x) else 0
+            rows = t.get('rows',[False]*3)
+            cols = t.get('cols',[False]*3)
+            diags = t.get('diags',[False]*2)
+            c.execute(
+                """
+                UPDATE bingo_meta SET
+                  row0=?, row1=?, row2=?,
+                  col0=?, col1=?, col2=?,
+                  diag0=?, diag1=?, full=?,
+                  win_row0=?, win_row1=?, win_row2=?,
+                  win_col0=?, win_col1=?, win_col2=?,
+                  win_diag0=?, win_diag1=?, win_full=?
+                WHERE id=1
+                """,
+                [
+                    _b(rows[0]), _b(rows[1]), _b(rows[2]),
+                    _b(cols[0]), _b(cols[1]), _b(cols[2]),
+                    _b(diags[0]), _b(diags[1]), _b(t.get('full')),
+                    (w.get('rows',[None]*3)[0] if w else None),
+                    (w.get('rows',[None]*3)[1] if w else None),
+                    (w.get('rows',[None]*3)[2] if w else None),
+                    (w.get('cols',[None]*3)[0] if w else None),
+                    (w.get('cols',[None]*3)[1] if w else None),
+                    (w.get('cols',[None]*3)[2] if w else None),
+                    (w.get('diags',[None]*2)[0] if w else None),
+                    (w.get('diags',[None]*2)[1] if w else None),
+                    (w.get('full') if w else None),
+                ]
+            )
+            DB.commit()
         except Exception:
             pass
 
@@ -3207,8 +3334,8 @@ class SettingsScreen(Screen):
                 headers = {'Authorization': f'Bearer {token}'}
                 attempted_urls.append(url)
                 r = _get(url, headers=headers)
-                # If we get 404, fall back to public snapshot (maybe never uploaded yet)
-                if r.status_code == 404 and manager_id:
+                # If we get 401/403/404, fall back to public snapshot (e.g., guest token or no upload yet)
+                if r.status_code in (401, 403, 404) and manager_id:
                     try:
                         r.close()
                     except Exception:
@@ -3261,22 +3388,21 @@ class SettingsScreen(Screen):
             self._replace_db_with_file(path)
             # After DB update, reset Bingo persistent state so downloaded DB view reflects prior server state
             try:
-                from kivy.app import App as _App
-                app = _App.get_running_app()
-                if app and app.root:
-                    # Delete bingo_state.json if present
+                # Compute the bingo_state.json path without requiring the Bingo screen to be instantiated
+                from db import _get_persistent_db_path as _pdb
+                p = _pdb('bingo_state.json')
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+            # If the Bingo screen is present, refresh it to reflect the new DB
+            try:
+                app = App.get_running_app()
+                if app and app.root and hasattr(app.root, 'ids'):
                     try:
-                        from kivy.factory import Factory as _Factory
-                    except Exception:
-                        _Factory = None
-                    try:
-                        # Resolve path via BingoScreen helper
                         b = app.root.ids.sm.get_screen('bingo')
-                        p = b._state_path()
-                        if os.path.exists(p):
-                            os.remove(p)
-                        # Reload bingo state and UI
-                        b.refresh_all()
+                        if b and hasattr(b, 'refresh_all'):
+                            b.refresh_all()
                     except Exception:
                         pass
             except Exception:

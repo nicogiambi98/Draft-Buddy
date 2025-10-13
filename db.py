@@ -170,6 +170,56 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+        # Migration: ensure bingo tables exist
+        try:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bingo_players (
+                  player_id INTEGER PRIMARY KEY,
+                  c0 INTEGER DEFAULT 0,
+                  c1 INTEGER DEFAULT 0,
+                  c2 INTEGER DEFAULT 0,
+                  c3 INTEGER DEFAULT 0,
+                  c4 INTEGER DEFAULT 0,
+                  c5 INTEGER DEFAULT 0,
+                  c6 INTEGER DEFAULT 0,
+                  c7 INTEGER DEFAULT 0,
+                  c8 INTEGER DEFAULT 0
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bingo_meta (
+                  id INTEGER PRIMARY KEY CHECK(id=1),
+                  row0 INTEGER DEFAULT 0,
+                  row1 INTEGER DEFAULT 0,
+                  row2 INTEGER DEFAULT 0,
+                  col0 INTEGER DEFAULT 0,
+                  col1 INTEGER DEFAULT 0,
+                  col2 INTEGER DEFAULT 0,
+                  diag0 INTEGER DEFAULT 0,
+                  diag1 INTEGER DEFAULT 0,
+                  full INTEGER DEFAULT 0,
+                  win_row0 INTEGER,
+                  win_row1 INTEGER,
+                  win_row2 INTEGER,
+                  win_col0 INTEGER,
+                  win_col1 INTEGER,
+                  win_col2 INTEGER,
+                  win_diag0 INTEGER,
+                  win_diag1 INTEGER,
+                  win_full INTEGER
+                )
+                """
+            )
+            # Ensure a single meta row exists
+            cur = c.execute("SELECT COUNT(*) FROM bingo_meta").fetchone()[0]
+            if cur == 0:
+                c.execute("INSERT INTO bingo_meta(id) VALUES (1)")
+            conn.commit()
+        except Exception:
+            pass
     return conn
 
 

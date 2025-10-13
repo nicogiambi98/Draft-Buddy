@@ -496,3 +496,12 @@ Troubleshooting
 - No users configured: ensure server/users.txt exists and is readable; the server logs a warning at startup.
 - Invalid users.txt entry: check format username:password@manager_id; see server logs for which entry was skipped.
 - 401 on requests: verify Authorization header format (Bearer <token>) and that JWT_SECRET hasn’t been rotated since token issuance.
+
+
+## Bingo persistence
+
+Bingo progress is stored inside the main SQLite database (events.db) so it syncs with the server alongside other data. The app maintains:
+- bingo_players: one row per player with 9 cells (c0..c8) marked 0/1
+- bingo_meta: a single row tracking which rows/cols/diagonals/full are taken and who won them
+
+On first run after this change, if a legacy bingo_state.json is found in the persistent app folder and the bingo tables are empty, the app will import that JSON into the DB and delete the file. You do not need to manage bingo_state.json anymore.
