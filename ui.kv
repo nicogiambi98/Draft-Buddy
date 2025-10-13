@@ -833,7 +833,9 @@
                 text: "Reset"
                 size_hint_x: None
                 width: dp(100)
-                on_release: root.reset_progress()
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.reset_progress() if app.is_mgr else None
         # Player title
         HeaderLabel:
             id: player_title

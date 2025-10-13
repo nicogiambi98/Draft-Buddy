@@ -2692,9 +2692,10 @@ class BingoScreen(Screen):
 
     # ---- Actions exposed to KV ----
     def open_completed_popup(self):
-        # Read-only summary with a visual mark for completed lines and list of winners
+        # Read-only summary of global bingo progress: first winners and taken lines only.
+        # This popup must be identical regardless of the selected player.
         content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(12))
-        # Grid with achievements labels; color cells that belong to completed lines/diags
+        # Grid with achievements labels; color cells that belong to globally completed lines/diags
         gl = GridLayout(cols=3, rows=3, spacing=dp(6), size_hint_y=None)
         gl.bind(minimum_height=lambda inst, val: setattr(inst, 'height', val))
         # Determine which indices are part of completed lines
@@ -2740,7 +2741,7 @@ class BingoScreen(Screen):
             _add_bg(lbl, idx in completed_indices)
             gl.add_widget(lbl)
         content.add_widget(gl)
-        # Winners list
+        # Winners list (global, first to complete only)
         def _nm(pid):
             if pid is None:
                 return None
@@ -2772,6 +2773,7 @@ class BingoScreen(Screen):
         if taken.get('full'):
             nm = _nm((self.winners or {}).get('full'))
             info.add_widget(Label(text=f"Full grid: {nm}", size_hint_y=None, height=dp(24)))
+        # Empty state
         if len(info.children) == 0:
             info.add_widget(Label(text="No completed achievements yet.", size_hint_y=None, height=dp(24)))
         sv.add_widget(info)
@@ -2781,7 +2783,7 @@ class BingoScreen(Screen):
         close = Button(text='Close')
         btns.add_widget(close)
         content.add_widget(btns)
-        popup = Popup(title='Completed Achievements', content=content, size_hint=(0.9, 0.9))
+        popup = Popup(title='Bingo Progress', content=content, size_hint=(0.9, 0.9))
         close.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
@@ -3499,7 +3501,6 @@ class SettingsScreen(Screen):
             except requests.exceptions.SSLError:
                 # Retry without SSL verification (some Android environments lack full root CA store)
                 resp = _upload(verify=False)
-
             dur_ms = int((time.time() - start_ts) * 1000)
             if resp.status_code == 200:
                 # Parse server JSON for extra details
