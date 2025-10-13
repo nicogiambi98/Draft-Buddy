@@ -2815,12 +2815,37 @@ class BingoScreen(Screen):
         no.bind(on_release=lambda *_: popup.dismiss())
         def _do(*_):
             popup.dismiss()
+            # Hard reset both per-player cells and global winners in the database
+            try:
+                from db import DB
+                c = DB.cursor()
+                c.execute("DELETE FROM bingo_players")
+                c.execute(
+                    """
+                    UPDATE bingo_meta SET
+                      row0=0, row1=0, row2=0,
+                      col0=0, col1=0, col2=0,
+                      diag0=0, diag1=0, full=0,
+                      win_row0=NULL, win_row1=NULL, win_row2=NULL,
+                      win_col0=NULL, win_col1=NULL, win_col2=NULL,
+                      win_diag0=NULL, win_diag1=NULL, win_full=NULL
+                    WHERE id=1
+                    """
+                )
+                DB.commit()
+            except Exception:
+                # If DB reset fails, continue with in-memory reset so UI is coherent
+                pass
+            # Reset in-memory state and refresh UI
             self.bingo_state = {}
             self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
             self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
-            self._save_state()
             self._render_grid()
             self._update_status()
+            try:
+                App.get_running_app().show_toast('Bingo has been fully reset')
+            except Exception:
+                pass
         yes.bind(on_release=_do)
         popup.open()
 
