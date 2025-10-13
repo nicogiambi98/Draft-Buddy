@@ -391,3 +391,113 @@ Notes and pitfalls
 - Submodules give you strict separation but require the extra `git submodule update --init` step after cloning.
 - Subtrees keep life simple for collaborators who don’t want to deal with submodules, at the cost of slightly more complex push/pull commands for the `server/` part.
 - On Windows, `robocopy` is used above for reliable folder copies. If `robocopy` is unavailable, you can use `Copy-Item -Recurse` instead.
+
+
+
+## Server configuration via environment variables
+
+The server (server/main.py) is configured entirely via environment variables. This keeps user lists and secrets out of source control.
+
+Available variables and defaults
+- STORAGE_DIR: Directory where uploaded SQLite files and public snapshots are stored. Default: ./storage
+- JWT_SECRET: Secret key used to sign access tokens. Default: draftbuddyclandestini! (change this in production)
+- USERS: Inline user definitions used for login. Format: username:password@manager_id entries separated by commas or newlines. Default: unset
+- USERS_FILE: Path to a file containing the same USERS format, one or more entries separated by commas or newlines. Default: unset
+- HOST: Bind address when running server/main.py directly. Default: 0.0.0.0
+- Port note: When running server/main.py directly, the port is currently fixed to 80. Use a reverse proxy, container port mapping, or run uvicorn explicitly if you need a different port.
+
+USERS/USERS_FILE format
+- Each entry is username:password@manager_id
+- You can provide multiple entries separated by commas or newlines
+- Example (single line): manager:superSecret123@clandestini,guest:guest@clandestini
+- Example (multiline file):
+  manager:superSecret123@clandestini
+  player1:safePwd@clandestini
+- Invalid lines are ignored and a warning is logged. If no valid users are provided, login will fail until you configure them.
+
+Security guidance
+- Always set a strong JWT_SECRET in production; rotating it invalidates existing tokens.
+- Prefer USERS_FILE over USERS when possible so you don’t expose credentials in process lists or shell history.
+- If using a file, ensure it is not committed to VCS (e.g., put it outside the repo or in a secrets-managed mount) and with strict permissions.
+
+Quick setup examples
+
+Windows PowerShell (local dev)
+- Set once per session:
+  $env:STORAGE_DIR = "C:\\draftbuddy_storage"
+  $env:JWT_SECRET = "<very-long-random>"
+  $env:USERS = "manager:<pwd>@clandestini,guest:guest@clandestini"
+  python server\main.py
+
+Windows PowerShell with USERS_FILE
+- Create a secrets file, e.g., C:\\secrets\\users.txt with:
+  manager:<pwd>@clandestini
+  guest:guest@clandestini
+- Then:
+  $env:USERS_FILE = "C:\\secrets\\users.txt"
+  $env:JWT_SECRET = "<very-long-random>"
+  python server\main.py
+
+Linux/macOS shell
+- export STORAGE_DIR=/var/lib/draftbuddy
+- export JWT_SECRET="$(openssl rand -hex 32)"
+- export USERS='manager:<pwd>@clandestini,guest:guest@clandestini'
+- python3 server/main.py
+
+Systemd service (Linux)
+- Create /etc/draftbuddy/users.conf with entries (username:password@manager_id)
+- /etc/systemd/system/draftbuddy.service:
+  [Unit]
+  Description=Draft Buddy Server
+  After=network.target
+  [Service]
+  WorkingDirectory=/opt/Draft-Buddy
+  Environment=JWT_SECRET=<very-long-random>
+  Environment=STORAGE_DIR=/var/lib/draftbuddy
+  Environment=USERS_FILE=/etc/draftbuddy/users.conf
+  ExecStart=/usr/bin/python3 server/main.py
+  Restart=on-failure
+  [Install]
+  WantedBy=multi-user.target
+- sudo systemctl daemon-reload && sudo systemctl enable --now draftbuddy
+
+Docker
+- Compose (docker-compose.yml):
+  services:
+    draftbuddy:
+      image: python:3.11-slim
+      working_dir: /app
+      volumes:
+        - ./:/app
+        - draftbuddy_data:/storage
+        - ./secrets/users.txt:/run/secrets/users.txt:ro
+      environment:
+        STORAGE_DIR: /storage
+        JWT_SECRET: ${JWT_SECRET}
+        USERS_FILE: /run/secrets/users.txt
+      command: ["python", "server/main.py"]
+      ports:
+        - "8080:80"  # hostPort:containerPort
+  volumes:
+    draftbuddy_data:
+- Then: JWT_SECRET=$(openssl rand -hex 32) docker compose up -d
+
+Railway/Render/Heroku-style platforms
+- Define variables in the service settings UI:
+  STORAGE_DIR = /data (or platform-recommended persistent path)
+  JWT_SECRET = <very-long-random>
+  USERS or USERS_FILE (use platform secrets/variables)
+- Expose port via platform routing. If the platform requires binding to a specific PORT env var, prefer running uvicorn explicitly via a start command, e.g.:
+  uvicorn server.main:app --host 0.0.0.0 --port $PORT
+
+Verifying your configuration
+- Check health: curl http://<host>:<port>/health
+- Attempt login: POST http://<host>:<port>/auth/login with JSON {"username":"manager","password":"<pwd>","remember":true}
+- On successful login, you’ll receive an access_token; use it as: Authorization: Bearer <token>
+- Upload DB (manager only): POST /db/upload multipart/form-data with file=<your.sqlite>
+- Public snapshot: GET /public/<manager_id>/snapshot.sqlite and /public/<manager_id>/version
+
+Troubleshooting
+- No users configured: ensure USERS or USERS_FILE is set and readable; the server logs a warning at startup.
+- Invalid USERS entry: check format username:password@manager_id; see server logs for which entry was skipped.
+- 401 on requests: verify Authorization header format (Bearer <token>) and that JWT_SECRET hasn’t been rotated since token issuance.
