@@ -204,6 +204,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Server credentials (do not commit)
+server/users.txt
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
