@@ -4102,7 +4102,7 @@ class EventsApp(App):
             except Exception:
                 pass
         try:
-            self._guest_dl_ev = _Clock.schedule_interval(lambda dt: self._do_guest_download(), 5.0)
+            self._guest_dl_ev = _Clock.schedule_interval(lambda dt: self._do_guest_download(), 15.0)
         except Exception:
             self._guest_dl_ev = None
 
@@ -4117,10 +4117,10 @@ class EventsApp(App):
         now = time.time()
         last = getattr(self, "_last_dl_ts", 0) or 0
         in_prog = bool(getattr(self, "_dl_in_progress", False))
-        # Debounce: avoid if a download is running or ran within the last 5 seconds
+        # Debounce: avoid if a download is running or ran within the last 15 seconds
         if in_prog:
             return False
-        if last and (now - float(last) < 5.0):
+        if last and (now - float(last) < 15.0):
             return False
         return True
 

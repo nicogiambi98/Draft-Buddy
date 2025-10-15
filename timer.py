@@ -281,10 +281,12 @@ class DraftTimer(BoxLayout):
         # Backward-compat list to hold loaded sounds when available (used for stopping any playing sounds)
         self.animal_sounds = []
         # Load the tick sound only (small, commonly used near zero)
+        # Defer loading tick sound to avoid initializing audio provider during first screen open
+        self.tick_sound = None
         try:
-            self.tick_sound = SoundLoader.load("assets/tick.wav")
+            self.tick_sound_path = os.path.join("assets", "tick.wav")
         except Exception:
-            self.tick_sound = None
+            self.tick_sound_path = "assets/tick.wav"
 
         # Prepare sequences
         self.sequences = self.get_sequences()
@@ -606,9 +608,16 @@ class DraftTimer(BoxLayout):
         remaining = self.get_remaining()
         # Tick for last 3 seconds (unless suppressed)
         now = time.time()
-        if remaining in (1, 2, 3) and self.tick_sound and now >= self.suppress_until:
+        if remaining in (1, 2, 3) and now >= self.suppress_until:
+            # Lazy-load tick sound at first use to avoid audio provider init during first screen open
             try:
-                self.tick_sound.play()
+                if self.tick_sound is None:
+                    try:
+                        self.tick_sound = SoundLoader.load(getattr(self, 'tick_sound_path', 'assets/tick.wav'))
+                    except Exception:
+                        self.tick_sound = None
+                if self.tick_sound is not None:
+                    self.tick_sound.play()
             except Exception:
                 pass
         if remaining > 0:
