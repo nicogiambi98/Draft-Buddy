@@ -245,3 +245,52 @@ def reload_db():
     except Exception:
         # Leave DB as-is on failure
         return False
+
+
+def reset_non_player_data():
+    """Delete all events, leagues, and bingo progress from the database.
+    Keeps players intact. Performs changes in a single transaction.
+    After this call, there will be no active or past leagues, no events,
+    and bingo progress will be cleared (meta reset to defaults).
+    """
+    try:
+        c = DB.cursor()
+        # Begin transaction
+        c.execute("BEGIN")
+        # Events and related tables
+        try:
+            c.execute("DELETE FROM matches")
+        except Exception:
+            pass
+        try:
+            c.execute("DELETE FROM event_players")
+        except Exception:
+            pass
+        try:
+            c.execute("DELETE FROM events")
+        except Exception:
+            pass
+        # Leagues
+        try:
+            c.execute("DELETE FROM leagues")
+        except Exception:
+            pass
+        # Bingo progress tables
+        try:
+            c.execute("DELETE FROM bingo_players")
+        except Exception:
+            pass
+        try:
+            # Reset bingo_meta to a single default row
+            c.execute("DELETE FROM bingo_meta")
+            c.execute("INSERT INTO bingo_meta(id,row0,row1,row2,col0,col1,col2,diag0,diag1,full,win_row0,win_row1,win_row2,win_col0,win_col1,win_col2,win_diag0,win_diag1,win_full) VALUES (1,0,0,0,0,0,0,0,0,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)")
+        except Exception:
+            pass
+        DB.commit()
+        return True
+    except Exception:
+        try:
+            DB.rollback()
+        except Exception:
+            pass
+        return False

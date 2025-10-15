@@ -2374,7 +2374,12 @@ class BingoScreen(Screen):
             pass
 
     def refresh_from_db(self):
-        # Reload players and reconcile current selection, then redraw UI
+        # Reload bingo state and players, then reconcile current selection and redraw UI
+        try:
+            # Ensure in-memory bingo_state/taken/winners reflect the DB
+            self._load_state()
+        except Exception:
+            pass
         try:
             self._load_players()
             self._render_players_list()
@@ -3695,6 +3700,106 @@ class SettingsScreen(Screen):
             self.last_status = f"Error during upload: {type(e).__name__}: {e}\nURL: {url}"
             App.get_running_app().show_toast('Network error while uploading')
 
+    def reset_data(self):
+        # Manager-only: two-step confirmation and reset of non-player data
+        app = App.get_running_app()
+        if not _is_manager():
+            if app:
+                app.show_toast('Only managers can reset data')
+            return
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.label import Label
+        from kivy.uix.button import Button
+        from kivy.uix.popup import Popup
+        # Step 2 action
+        def _do_reset(*_):
+            try:
+                # Perform DB cleanup
+                try:
+                    from db import reset_non_player_data
+                    ok = reset_non_player_data()
+                except Exception:
+                    ok = False
+                # Also remove legacy bingo state file (prevents re-import)
+                try:
+                    # Reuse BingoScreen logic to resolve path without importing full class
+                    try:
+                        from db import _get_persistent_db_path as _gpp
+                        legacy_path = _gpp('bingo_state.json')
+                    except Exception:
+                        legacy_path = os.path.join(os.path.expanduser('~'), '.draft_buddy', 'bingo_state.json')
+                    if os.path.exists(legacy_path):
+                        os.remove(legacy_path)
+                except Exception:
+                    pass
+                # Refresh affected screens
+                try:
+                    sm = app.root.ids.sm if app and app.root and hasattr(app.root, 'ids') else None
+                except Exception:
+                    sm = None
+                if sm:
+                    try:
+                        bs = sm.get_screen('bingo')
+                        if bs and hasattr(bs, 'refresh_all'):
+                            bs.refresh_all()
+                        elif bs and hasattr(bs, 'refresh_from_db'):
+                            bs.refresh_from_db()
+                    except Exception:
+                        pass
+                    try:
+                        ls = sm.get_screen('league')
+                        if ls and hasattr(ls, '_load_leagues'):
+                            ls._load_leagues()
+                    except Exception:
+                        pass
+                    try:
+                        es = sm.get_screen('eventslist')
+                        if es and hasattr(es, 'refresh'):
+                            es.refresh()
+                    except Exception:
+                        pass
+                if app:
+                    app.show_toast('Reset complete' if ok else 'Reset failed')
+            except Exception:
+                try:
+                    if app:
+                        app.show_toast('Reset failed')
+                except Exception:
+                    pass
+        # Step 2 popup (with swapped Yes/No positions)
+        def _open_step2(*_):
+            box2 = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
+            lbl2 = Label(text='This will erase: events, leagues, and bingo progress.\nPlayers are kept.\nNo automatic upload will occur.\nProceed?', halign='center')
+            lbl2.bind(size=lambda inst, v: setattr(inst, 'text_size', (inst.width, None)))
+            box2.add_widget(lbl2)
+            row2 = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+            # Swap button positions compared to step 1
+            btn_no2 = Button(text='No')
+            btn_yes2 = Button(text='Yes')
+            row2.add_widget(btn_no2)
+            row2.add_widget(btn_yes2)
+            box2.add_widget(row2)
+            pop2 = Popup(title='Confirm reset (2/2)', content=box2, size_hint=(0.8, 0.4))
+            btn_yes2.bind(on_release=lambda *_: (pop2.dismiss(), _do_reset()))
+            btn_no2.bind(on_release=lambda *_: pop2.dismiss())
+            pop2.open()
+        # Step 1 popup
+        box1 = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
+        lbl1 = Label(text='Manager reset: delete all events, leagues, and bingo progress.\nPlayers will remain.\nThis does NOT push to server automatically.\nAre you absolutely sure?', halign='center')
+        lbl1.bind(size=lambda inst, v: setattr(inst, 'text_size', (inst.width, None)))
+        box1.add_widget(lbl1)
+        row1 = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        # Intentionally place Yes on the left and No on the right (unusual) for step 1
+        btn_yes1 = Button(text='Yes')
+        btn_no1 = Button(text='No')
+        row1.add_widget(btn_yes1)
+        row1.add_widget(btn_no1)
+        box1.add_widget(row1)
+        pop1 = Popup(title='Confirm reset (1/2)', content=box1, size_hint=(0.8, 0.4))
+        btn_yes1.bind(on_release=lambda *_: (pop1.dismiss(), _open_step2()))
+        btn_no1.bind(on_release=lambda *_: pop1.dismiss())
+        pop1.open()
+
 
 class BottomNav(BoxLayout):
     def on_kv_post(self, base_widget):
@@ -3997,7 +4102,7 @@ class EventsApp(App):
             except Exception:
                 pass
         try:
-            self._guest_dl_ev = _Clock.schedule_interval(lambda dt: self._do_guest_download(), 60.0)
+            self._guest_dl_ev = _Clock.schedule_interval(lambda dt: self._do_guest_download(), 5.0)
         except Exception:
             self._guest_dl_ev = None
 
@@ -4012,10 +4117,10 @@ class EventsApp(App):
         now = time.time()
         last = getattr(self, "_last_dl_ts", 0) or 0
         in_prog = bool(getattr(self, "_dl_in_progress", False))
-        # Debounce: avoid if a download is running or ran within the last 15 seconds
+        # Debounce: avoid if a download is running or ran within the last 5 seconds
         if in_prog:
             return False
-        if last and (now - float(last) < 15.0):
+        if last and (now - float(last) < 5.0):
             return False
         return True
 
@@ -4060,6 +4165,13 @@ class EventsApp(App):
                             elif current == 'eventslist':
                                 try:
                                     sm2.get_screen('eventslist').refresh()
+                                except Exception:
+                                    pass
+                            elif current == 'event':
+                                try:
+                                    ev = sm2.get_screen('event')
+                                    if hasattr(ev, 'refresh_matches'):
+                                        ev.refresh_matches()
                                 except Exception:
                                     pass
                             elif current == 'league':

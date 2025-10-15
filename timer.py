@@ -258,7 +258,7 @@ class DraftTimer(BoxLayout):
         self.phase_start_ts = 0  # epoch seconds when current phase started
         self.phase_duration = 0  # seconds allocated to current phase
 
-        # Load sounds: include all mp3/wav/ogg in assets except the ticking sound
+        # Prepare sound paths but avoid loading them synchronously here to prevent UI jank on first open (especially on Android).
         audio_files = []
         try:
             for pattern in ('*.mp3', '*.wav', '*.ogg'):
@@ -271,18 +271,20 @@ class DraftTimer(BoxLayout):
                     'elephant.mp3', 'howl.mp3', 'lion.mp3', 'owl.mp3', 'seagulls.mp3', 'sheep.mp3'
                 ]
             ]
-        # Exclude tick sound and non-existing files
-        audio_files = [p for p in audio_files if os.path.basename(p).lower() != 'tick.wav' and os.path.isfile(p)]
-        # Load and keep only successfully loaded sounds
+        # Exclude tick sound and non-existing files; keep only file paths for lazy loading
+        self.animal_sound_paths = [
+            p for p in audio_files
+            if os.path.basename(p).lower() != 'tick.wav' and os.path.isfile(p)
+        ]
+        # Cache for loaded Sound objects (path -> Sound)
+        self._sound_cache = {}
+        # Backward-compat list to hold loaded sounds when available (used for stopping any playing sounds)
         self.animal_sounds = []
-        for p in audio_files:
-            try:
-                s = SoundLoader.load(p)
-                if s is not None:
-                    self.animal_sounds.append(s)
-            except Exception:
-                pass
-        self.tick_sound = SoundLoader.load("assets/tick.wav")
+        # Load the tick sound only (small, commonly used near zero)
+        try:
+            self.tick_sound = SoundLoader.load("assets/tick.wav")
+        except Exception:
+            self.tick_sound = None
 
         # Prepare sequences
         self.sequences = self.get_sequences()
@@ -636,16 +638,17 @@ class DraftTimer(BoxLayout):
                 self.start_next_timer()
 
     def play_animal_sound(self):
-        if not self.animal_sounds:
+        # If we have neither cached sounds nor paths, nothing to play
+        if not getattr(self, 'animal_sound_paths', None) and not getattr(self, '_sound_cache', None):
             return
         # Stop any currently playing animal sounds to avoid overlap
         try:
-            for s in self.animal_sounds:
+            cache_vals = list(getattr(self, '_sound_cache', {}).values())
+            for s in cache_vals:
                 try:
                     if s is not None and getattr(s, 'status', None) == 'play':
                         s.stop()
                 except Exception:
-                    # Fallback: try stop regardless
                     try:
                         s.stop()
                     except Exception:
@@ -658,9 +661,38 @@ class DraftTimer(BoxLayout):
                 self.tick_sound.stop()
         except Exception:
             pass
-        sound = random.choice(self.animal_sounds)
-        if sound:
-            sound.play()
+        # Choose a random path and lazily load the sound if needed
+        try:
+            paths = getattr(self, 'animal_sound_paths', [])
+            if not paths:
+                return
+            path = random.choice(paths)
+            sound = None
+            if path in self._sound_cache:
+                sound = self._sound_cache.get(path)
+            else:
+                try:
+                    sound = SoundLoader.load(path)
+                except Exception:
+                    sound = None
+                if sound is not None:
+                    self._sound_cache[path] = sound
+                    # Maintain backward-compat list used elsewhere in code (if any)
+                    try:
+                        self.animal_sounds.append(sound)
+                    except Exception:
+                        pass
+            if sound:
+                sound.play()
+        except Exception:
+            # As a fallback (shouldn't normally hit), try any preloaded sounds list
+            try:
+                if self.animal_sounds:
+                    s = random.choice(self.animal_sounds)
+                    if s:
+                        s.play()
+            except Exception:
+                pass
 
     # ---- Manual navigation helpers (prev/next) ----
     def _current_phase_info(self):

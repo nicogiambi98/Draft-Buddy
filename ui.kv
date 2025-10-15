@@ -769,21 +769,23 @@
         orientation: "vertical"
         padding: dp(10)
         spacing: dp(8)
+        # Full-width title on its own row (prevents squashing on Android)
+        TitleLabel:
+            text: "League Tracker"
+            size_hint_y: None
+            height: dp(40)
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+        # Controls row directly under the title
         BoxLayout:
             size_hint_y: None
             height: dp(48)
             spacing: dp(8)
-            TitleLabel:
-                text: "League Tracker"
-                size_hint_x: 1
-                halign: 'left'
-                valign: 'middle'
-                text_size: self.size
             Spinner:
                 id: league_spinner
                 text: 'Current League'
-                size_hint_x: None
-                width: dp(200)
+                size_hint_x: 1
                 on_text: root.on_league_selected(self.text)
             Button:
                 id: close_btn
@@ -1195,3 +1197,10 @@
                     size_hint_y: None
                     height: dp(48)
                     on_release: root.do_logout()
+                SecondaryButton:
+                    text: 'Manager Reset (No Upload)'
+                    size_hint_y: None
+                    height: dp(48) if (hasattr(app, 'is_mgr') and app.is_mgr) else 0
+                    opacity: 1 if (hasattr(app, 'is_mgr') and app.is_mgr) else 0
+                    disabled: not (hasattr(app, 'is_mgr') and app.is_mgr)
+                    on_release: root.reset_data()
