@@ -707,6 +707,13 @@ class MatchRow(BoxLayout):
                 DB.commit()
         except Exception:
             pass
+        # Manager: upload DB after score change
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("match_score_change")
+        except Exception:
+            pass
         # Notify parent/screen that a score changed
         try:
             if self.on_score_change:
@@ -812,6 +819,13 @@ class PlayersScreen(Screen):
         DB.commit()
         # Recompute all nicknames to avoid new collisions
         _rebuild_all_nicknames()
+        # Manager: upload DB after write
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("new_player_popup")
+        except Exception:
+            pass
         try:
             popup.dismiss()
         except Exception:
@@ -884,6 +898,13 @@ class PlayersScreen(Screen):
             pass
         DB.execute("DELETE FROM players WHERE id=?", (pid,))
         DB.commit()
+        # Manager: upload DB after delete
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("delete_player")
+        except Exception:
+            pass
         self.refresh()
 
 
@@ -915,6 +936,13 @@ class NewPlayerScreen(Screen):
         DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (fullname, nick))
         DB.commit()
         _rebuild_all_nicknames()
+        # Manager: upload DB after write
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("new_player_screen")
+        except Exception:
+            pass
         # Navigate back to Players and clear the filter so the new player is visible
         try:
             players = self.manager.get_screen("players")
@@ -1422,6 +1450,13 @@ class EventScreen(Screen):
             now_ts = int(time.time())
             DB.execute("UPDATE events SET status='active', current_round=?, round_start_ts=? WHERE id=?", (edited_round, now_ts, self.event_id))
             DB.commit()
+            # Manager: upload DB after reopening/editing past round
+            try:
+                app = App.get_running_app()
+                if app:
+                    app._maybe_upload_after_write("edit_past_round")
+            except Exception:
+                pass
             self.current_round = edited_round
             self.view_round = None
             # Notify user briefly
@@ -1462,6 +1497,13 @@ class EventScreen(Screen):
         now_ts = int(time.time())
         DB.execute("UPDATE events SET current_round=?, round_start_ts=? WHERE id=?", (next_round, now_ts, self.event_id))
         DB.commit()
+        # Manager: upload DB after advancing to next round
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("next_round")
+        except Exception:
+            pass
         self.current_round = next_round
         self.refresh_matches()
 
@@ -1489,6 +1531,13 @@ class EventScreen(Screen):
                     DB.execute("UPDATE events SET current_round=? WHERE id=?", (cur - 1, self.event_id))
         DB.execute("UPDATE events SET status='closed' WHERE id=?", (self.event_id,))
         DB.commit()
+        # Manager: upload DB after closing event
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("close_event")
+        except Exception:
+            pass
         # show final standings when closing
         self.manager.get_screen("standings").show_for_event(self.event_id)
         self.manager.current = "standings"
@@ -1543,6 +1592,13 @@ class SeatingScreen(Screen):
                         DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id=?",
                                    (idx, self.event_id, pid))
                 DB.commit()
+                # Manager: upload DB after seating randomize
+                try:
+                    app = App.get_running_app()
+                    if app:
+                        app._maybe_upload_after_write("seating_randomize")
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1568,6 +1624,13 @@ class SeatingScreen(Screen):
                 cur.execute("INSERT INTO event_players (event_id, player_id, guest_name, seating_pos) VALUES (?, ?, ?, ?)",
                             (self.event_id, pid, None, idx))
         DB.commit()
+        # Manager: upload DB after event creation
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("event_created")
+        except Exception:
+            pass
 
     def load_existing_event(self, event_id):
         # Load an existing not-started event into the seating screen
@@ -1638,6 +1701,13 @@ class SeatingScreen(Screen):
                         DB.commit()
                     except Exception:
                         pass
+                # Manager: upload DB after preparing Round 1/reset
+                try:
+                    app = App.get_running_app()
+                    if app:
+                        app._maybe_upload_after_write("begin_round1_prepare")
+                except Exception:
+                    pass
                 ev = self.manager.get_screen("event")
                 ev.load_event(self.event_id)
                 # Ensure round 1 is shown (view override does not change state)
@@ -1655,12 +1725,26 @@ class SeatingScreen(Screen):
                 return
             # Generate Round 1 for a fresh event
             generate_round_one(self.event_id)
+            # Manager: upload DB after creating Round 1
+            try:
+                app = App.get_running_app()
+                if app:
+                    app._maybe_upload_after_write("begin_round1")
+            except Exception:
+                pass
             self.manager.get_screen("event").load_event(self.event_id)
             self.manager.current = "event"
             return
         # Fallback: create event now (should be rare)
         self._create_event_if_needed()
         generate_round_one(self.event_id)
+        # Manager: upload DB after creating Round 1 (fallback)
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("begin_round1_fallback")
+        except Exception:
+            pass
         self.manager.get_screen("event").load_event(self.event_id)
         self.manager.current = "event"
 
@@ -1680,6 +1764,13 @@ class SeatingScreen(Screen):
             # Mark event closed and reset round counters
             DB.execute("UPDATE events SET status='closed', current_round=0 WHERE id=?", (self.event_id,))
             DB.commit()
+            # Manager: upload DB after closing event from seating
+            try:
+                app = App.get_running_app()
+                if app:
+                    app._maybe_upload_after_write("close_event_from_seating")
+            except Exception:
+                pass
             try:
                 App.get_running_app().show_toast("Event closed. All results cleared.")
             except Exception:
@@ -1984,6 +2075,13 @@ class LeagueScreen(Screen):
             # Close any existing active league silently if present? We only start when none is active; keep simple insert.
             DB.execute("INSERT INTO leagues (name, start_ts, end_ts) VALUES (?, ?, NULL)", (name, now))
             DB.commit()
+            # Manager: upload DB after starting new league
+            try:
+                app = App.get_running_app()
+                if app:
+                    app._maybe_upload_after_write("start_new_league")
+            except Exception:
+                pass
             # Reload leagues, select the new one
             self._load_leagues()
             # Find active league id (new one)
@@ -2060,6 +2158,13 @@ class LeagueScreen(Screen):
             if row:
                 DB.execute("UPDATE leagues SET end_ts=? WHERE id=?", (now, row[0]))
                 DB.commit()
+                # Manager: upload DB after closing league
+                try:
+                    app = App.get_running_app()
+                    if app:
+                        app._maybe_upload_after_write("close_league")
+                except Exception:
+                    pass
             # Reload UI and keep selection on the just closed league
             self._load_leagues()
             self._update_action_button()
@@ -2535,10 +2640,11 @@ class BingoScreen(Screen):
             btn.height = dp(120)
             btn.background_normal = ''
             btn.background_down = ''
-            # Guests cannot update bingo cells
+            # Guests cannot update bingo cells; keep buttons visible for guests
             can_edit = _is_manager()
-            btn.disabled = done or (not can_edit)
-            # Color: green if done, dark gray otherwise; lighten when disabled handled by kv default
+            # Only disable when the achievement is already done, so guests see normal opacity
+            btn.disabled = done
+            # Color: green if done, dark gray otherwise; no visual press feedback because background_down is blank
             btn.background_color = (0.16,0.64,0.28,1) if done else (0.26,0.26,0.26,1)
             if (not done) and can_edit:
                 def _on_press(_i=idx, _txt=txt):
@@ -2592,6 +2698,13 @@ class BingoScreen(Screen):
         arr[idx] = True
         self.bingo_state[key] = arr
         self._save_state()
+        # Manager: upload DB after marking achievement done
+        try:
+            app = App.get_running_app()
+            if app:
+                app._maybe_upload_after_write("bingo_mark_done")
+        except Exception:
+            pass
         self._render_grid()
         # After marking, check winnings
         self._check_wins()
@@ -2833,6 +2946,13 @@ class BingoScreen(Screen):
                     """
                 )
                 DB.commit()
+                # Manager: upload DB after bingo reset
+                try:
+                    app = App.get_running_app()
+                    if app:
+                        app._maybe_upload_after_write("bingo_reset")
+                except Exception:
+                    pass
             except Exception:
                 # If DB reset fails, continue with in-memory reset so UI is coherent
                 pass
@@ -3132,6 +3252,15 @@ class LoginScreen(Screen):
                     app.root.ids.bottomnav.disabled = False
                 except Exception:
                     pass
+            # Start/stop guest auto-download based on role
+            try:
+                if app:
+                    if app.is_manager():
+                        app._stop_guest_autodownload()
+                    else:
+                        app._start_guest_autodownload(fire_immediately=True)
+            except Exception:
+                pass
             app.show_toast('Logged in')
         except requests.exceptions.Timeout as e:
             self.status = f'Network timeout: {type(e).__name__}'
@@ -3276,6 +3405,11 @@ class SettingsScreen(Screen):
                 app.root.ids.bottomnav.disabled = True
             except Exception:
                 pass
+        try:
+            if app:
+                app._stop_guest_autodownload()
+        except Exception:
+            pass
         app.show_toast('Logged out')
 
     def _replace_db_with_file(self, tmp_path: str):
@@ -3821,6 +3955,185 @@ class EventsApp(App):
             self.auth_role = 'guest'
             self.auth_username = ''
 
+    # --- Guest auto-download scheduler ---
+    def _stop_guest_autodownload(self):
+        try:
+            ev = getattr(self, '_guest_dl_ev', None)
+            if ev is not None:
+                try:
+                    ev.cancel()
+                except Exception:
+                    pass
+            self._guest_dl_ev = None
+        except Exception:
+            self._guest_dl_ev = None
+
+    def _do_guest_download(self, *args):
+        # Guard: only in guest mode
+        try:
+            if self.is_manager():
+                return
+        except Exception:
+            pass
+        # Use unified debounce + background execution
+        try:
+            if self._should_trigger_download():
+                self._start_background_download(reason="auto")
+        except Exception:
+            pass
+
+    def _start_guest_autodownload(self, fire_immediately=True):
+        # Ensure only one scheduler exists
+        self._stop_guest_autodownload()
+        try:
+            if self.is_manager():
+                return
+        except Exception:
+            return
+        from kivy.clock import Clock as _Clock
+        if fire_immediately:
+            try:
+                _Clock.schedule_once(lambda dt: self._do_guest_download(), 0)
+            except Exception:
+                pass
+        try:
+            self._guest_dl_ev = _Clock.schedule_interval(lambda dt: self._do_guest_download(), 60.0)
+        except Exception:
+            self._guest_dl_ev = None
+
+    # --- Conditional background download used by auto-schedule and navbar clicks ---
+    def _should_trigger_download(self) -> bool:
+        try:
+            # Only trigger for guests (non-managers)
+            if self.is_manager():
+                return False
+        except Exception:
+            return False
+        now = time.time()
+        last = getattr(self, "_last_dl_ts", 0) or 0
+        in_prog = bool(getattr(self, "_dl_in_progress", False))
+        # Debounce: avoid if a download is running or ran within the last 15 seconds
+        if in_prog:
+            return False
+        if last and (now - float(last) < 15.0):
+            return False
+        return True
+
+    def _start_background_download(self, reason: str = "auto"):
+        # Mark pre-emptively to reduce race with multiple triggers
+        try:
+            self._dl_in_progress = True
+            if not getattr(self, "_last_dl_ts", None):
+                self._last_dl_ts = 0.0
+        except Exception:
+            pass
+        def _worker():
+            try:
+                sm = self.root.ids.sm if self.root and hasattr(self.root, 'ids') else None
+                scr = sm.get_screen('settings') if sm else None
+                if scr and hasattr(scr, 'do_download'):
+                    scr.do_download()
+            except Exception:
+                pass
+            finally:
+                # Mark completion and timestamp
+                try:
+                    self._last_dl_ts = time.time()
+                    self._dl_in_progress = False
+                except Exception:
+                    pass
+                # After download, refresh current relevant screen
+                try:
+                    if not self.root or not hasattr(self.root, 'ids'):
+                        return
+                    sm2 = self.root.ids.sm
+                    current = sm2.current if sm2 else None
+                    def _refresh(_dt):
+                        try:
+                            if not sm2:
+                                return
+                            if current == 'players':
+                                try:
+                                    sm2.get_screen('players').refresh()
+                                except Exception:
+                                    pass
+                            elif current == 'eventslist':
+                                try:
+                                    sm2.get_screen('eventslist').refresh()
+                                except Exception:
+                                    pass
+                            elif current == 'league':
+                                try:
+                                    sm2.get_screen('league').refresh()
+                                except Exception:
+                                    pass
+                            elif current == 'bingo':
+                                try:
+                                    b = sm2.get_screen('bingo')
+                                    if hasattr(b, 'refresh_from_db'):
+                                        b.refresh_from_db()
+                                    elif hasattr(b, 'refresh_all'):
+                                        b.refresh_all()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    Clock.schedule_once(_refresh, 0)
+                except Exception:
+                    pass
+        try:
+            import threading
+            t = threading.Thread(target=_worker, daemon=True)
+            t.start()
+        except Exception:
+            # Fallback: run inline (may block UI)
+            try:
+                _worker()
+            except Exception:
+                pass
+
+    def _maybe_upload_after_write(self, reason: str = ""):
+        # Only for managers; guests never upload
+        try:
+            if not self.is_manager():
+                return
+        except Exception:
+            return
+        # Debounce and avoid overlapping uploads
+        now = time.time()
+        try:
+            last = float(getattr(self, "_last_ul_ts", 0) or 0)
+            if getattr(self, "_ul_in_progress", False):
+                return
+            if last and (now - last) < 2.0:
+                return
+        except Exception:
+            pass
+        def _worker():
+            try:
+                sm = self.root.ids.sm if self.root and hasattr(self.root, 'ids') else None
+                scr = sm.get_screen('settings') if sm else None
+                if scr and hasattr(scr, 'do_upload'):
+                    scr.do_upload()
+            except Exception:
+                pass
+            finally:
+                try:
+                    self._last_ul_ts = time.time()
+                    self._ul_in_progress = False
+                except Exception:
+                    pass
+        try:
+            import threading
+            self._ul_in_progress = True
+            t = threading.Thread(target=_worker, daemon=True)
+            t.start()
+        except Exception:
+            try:
+                _worker()
+            except Exception:
+                pass
+
     def build(self):
         Builder.load_file("ui.kv")
         # Create root container with fixed BottomNav and a ScreenManager (id: sm)
@@ -3892,6 +4205,14 @@ class EventsApp(App):
             pass
         # Debounce storage for back handling
         self._back_debounce_until = 0
+        # Start guest auto-download on app open if applicable
+        try:
+            if not self.is_manager():
+                self._start_guest_autodownload(fire_immediately=True)
+            else:
+                self._stop_guest_autodownload()
+        except Exception:
+            pass
         return root
 
     def is_manager(self):
@@ -3990,6 +4311,12 @@ class EventsApp(App):
             _Clock.schedule_once(lambda dt: self.root.ids.bottomnav.center_on(target), 0)
         except Exception:
             pass
+        # Trigger background download on navbar click with 15s debounce (guest only)
+        try:
+            if self._should_trigger_download():
+                self._start_background_download(reason="nav")
+        except Exception:
+            pass
 
     def _consume_back_if_keyboard(self):
         """Close soft keyboard (by unfocusing any TextInput) and report whether we consumed the back.
@@ -4084,6 +4411,14 @@ class EventsApp(App):
                 scr = sm.get_screen("drafttimer")
                 if hasattr(scr, "_timer_widget") and hasattr(scr._timer_widget, "on_app_resume"):
                     scr._timer_widget.on_app_resume()
+        except Exception:
+            pass
+        # Ensure guest auto-download continues after resume (avoid duplicate schedules)
+        try:
+            if not self.is_manager():
+                self._start_guest_autodownload(fire_immediately=False)
+            else:
+                self._stop_guest_autodownload()
         except Exception:
             pass
 
