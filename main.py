@@ -3162,6 +3162,7 @@ def _is_manager() -> bool:
 class LoginScreen(Screen):
     server_url = StringProperty("")
     username = StringProperty("")
+    playgroup = StringProperty("clandestini")
     status = StringProperty("")
 
     def on_pre_enter(self):
@@ -3169,6 +3170,7 @@ class LoginScreen(Screen):
             auth = load_auth() or {}
             # server URL is fixed; no need to load from auth
             self.username = auth.get('username', self.username or '')
+            self.playgroup = auth.get('playgroup', self.playgroup or 'clandestini') or 'clandestini'
             self.status = ''
         except Exception:
             pass
@@ -3203,6 +3205,7 @@ class LoginScreen(Screen):
                     'username': user,
                     'password': password,
                     'remember': bool(remember),
+                    'playgroup': (self.playgroup or 'clandestini')
                 }, timeout=25)
             except requests.exceptions.SSLError:
                 # Retry without SSL verification on Android devices missing some CAs
@@ -3210,6 +3213,7 @@ class LoginScreen(Screen):
                     'username': user,
                     'password': password,
                     'remember': bool(remember),
+                    'playgroup': (self.playgroup or 'clandestini')
                 }, timeout=25, verify=False)
 
             if resp.status_code != 200:
@@ -3236,6 +3240,7 @@ class LoginScreen(Screen):
             save_auth({
                 'base_url': base,
                 'username': user,
+                'playgroup': (self.playgroup or 'clandestini'),
                 'token': token,
                 'manager_id': manager_id,
                 'exp': exp,

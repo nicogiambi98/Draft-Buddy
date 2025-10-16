@@ -1120,6 +1120,14 @@
                 password: True
                 hint_text: 'password'
                 multiline: False
+            HeaderLabel:
+                text: 'Playgroup'
+            TextInput:
+                id: playgroup_input
+                text: root.playgroup or 'clandestini'
+                hint_text: 'playgroup'
+                multiline: False
+                on_text: root.playgroup = self.text.strip() or 'clandestini'
         BoxLayout:
             size_hint_y: None
             height: dp(40)
