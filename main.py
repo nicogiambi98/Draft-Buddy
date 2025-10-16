@@ -3180,7 +3180,12 @@ class LoginScreen(Screen):
         base = _get_base_url(None)
         user = (self.username or '').strip()
         if not user or not password:
-            App.get_running_app().show_toast('Please fill username and password')
+            msg = 'Please fill in both username and password, or login as guest'
+            try:
+                self.status = msg
+            except Exception:
+                pass
+            App.get_running_app().show_toast(msg)
             return
         url = f"{base}/auth/login"
 
