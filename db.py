@@ -1,4 +1,15 @@
-# db.py
+"""Database utilities for Draft Buddy.
+
+This module centralizes database access and schema management for the app.
+It provides a cross-platform strategy for where the SQLite database file
+is stored (desktop vs. Android/iOS), performs first-run initialization,
+and contains helpers to reset app data safely without affecting players.
+
+Behavioral note: All functions in this module are side-effectful with the
+on-disk SQLite DB and are designed to be resilient (errors are swallowed
+where appropriate) so the UI never crashes. No functional changes were
+introduced in this documentation pass.
+"""
 import os
 import sqlite3
 import shutil

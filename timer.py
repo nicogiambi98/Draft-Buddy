@@ -1,3 +1,11 @@
+"""Draft timer widget and helpers.
+
+Provides a self-contained DraftTimer Kivy widget with play/pause/reset controls
+and an IconButton that supports PNG and SVG (with graceful fallbacks). The timer
+runs on wall-clock time and is safe to pause/resume without drifting.
+
+Documentation only; logic and visuals unchanged.
+"""
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.clock import Clock
@@ -22,6 +30,14 @@ GardenSvgWidget = None
 GardenSvgInstruction = None
 
 class IconButton(ButtonBehavior, Widget):
+    """A lightweight image icon button with SVG and raster support.
+
+    Behavior:
+    - If .svg and Kivy Garden svg is available, uses a dedicated widget.
+    - If not, attempts canvas instructions; otherwise draws simple vector glyphs.
+    - PNG/JPG sources are displayed via Kivy Image.
+    The widget auto-centers the icon and keeps aspect ratio.
+    """
     source = StringProperty('')
 
     def __init__(self, **kwargs):
@@ -241,6 +257,13 @@ class IconButton(ButtonBehavior, Widget):
                 self.canvas.add(self._draw_group)
 
 class DraftTimer(BoxLayout):
+    """A vertical layout widget implementing a three-round draft timer.
+
+    Provides sequences for different modes (Expert/Regular/Beginner/Test),
+    supports play/pause/reset, manual next/previous phase navigation, and
+    plays short sounds between phases. The widget is self-contained and does
+    not manipulate the app's navigation.
+    """
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
 

@@ -1,4 +1,11 @@
-# pairing.py
+"""Pairings and standings logic.
+
+This module implements Swiss-style standings and round pairings used by the app.
+It queries the shared DB connection (db.DB) and never mutates UI state directly.
+All algorithms are intentionally simple and predictable for small local events.
+
+Note: Only documentation has been added; functionality remains unchanged.
+"""
 from typing import List, Tuple, Optional
 import random
 import time
@@ -6,6 +13,14 @@ from db import DB
 
 
 def get_name_for_event_player(event_id: int, event_player_db_id: Optional[int]) -> str:
+    """Return a displayable participant name for a given event_players.id.
+
+    Parameters:
+        event_id: The ID of the event.
+        event_player_db_id: The primary key in event_players (as stored in matches).
+    Returns:
+        A best-effort string: guest_name, player nickname/full name, or placeholders.
+    """
     # event_players stores player_id or guest_name, but matches store 'player1' as event_players.id
     if event_player_db_id is None:
         return "BYE"
@@ -153,6 +168,15 @@ def compute_standings(event_id: int):
 
 
 def generate_round_one(event_id: int) -> None:
+    """Generate and persist round 1 pairings based on seating.
+
+    Rule:
+      - Seat order is split in half; players are paired opposite at the table
+        (i pairs with i + n/2 after removing a possible BYE).
+      - If odd number of participants, select one BYE at random and award 2-0.
+      - Starts the event by setting current_round=1 and round_start_ts.
+    Side effects: Inserts into matches table and updates events.
+    """
     # create round 1 pairings according to opposite-at-table rule
     cur = DB.cursor()
     rows = list(DB.execute("SELECT id, player_id, guest_name, seating_pos FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall())

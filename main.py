@@ -1,6 +1,17 @@
-# main.py
-# Minimal Companion-lite Events MVP
-# Requires: kivy
+"""Draft Buddy application entry point.
+
+This module wires together all Kivy Screens, kv layout, and business logic for:
+- Player management
+- Event creation and Swiss-like rounds with standings
+- Seating and round timer integration
+- League tracker and MTG bingo helper
+- Settings (import/export DB, login, guest sync) and a simple server client
+
+Notes:
+- This documentation pass adds docstrings and comments without changing logic
+  or visuals.
+- The embedded KV string defines most of the UI; the code-behind updates it.
+"""
 
 import sqlite3
 import random
@@ -463,6 +474,16 @@ from db import DB
 # ----------------------
 
 def _compute_unique_nickname(fullname: str) -> str:
+    """Compute a short nickname unique among existing players.
+
+    Strategy:
+    - Use "First S." if a surname is present; otherwise just "First".
+    - If collisions occur within existing nicknames, gradually extend the
+      surname prefix ("First Su.", "First Sur.", ...) until unique.
+    - As a last resort, append a numeric suffix ("First S. 2").
+    This function only reads existing DB nicknames and returns a suggestion;
+    it does not write to the DB.
+    """
     name = (fullname or "").strip()
     if not name:
         return ""
@@ -499,9 +520,13 @@ def _compute_unique_nickname(fullname: str) -> str:
 
 
 def _rebuild_all_nicknames():
-    # Recompute all nicknames so that within each first-name group, surnames use the minimal
-    # unique prefix length. Players without a surname use just the first name, with numeric
-    # suffixes if duplicates exist.
+    """Recompute all player nicknames for minimal unique prefixes.
+
+    Within each group sharing the same first name (case-insensitive), compute the
+    minimal unique surname prefix length so that "First S." style nicknames do not
+    collide. Players without a surname get just "First"; duplicates receive a small
+    numeric suffix. Writes changes to the DB.
+    """
     try:
         rows = DB.execute("SELECT id, name FROM players ORDER BY id").fetchall()
     except Exception:
@@ -679,6 +704,16 @@ class MatchRow(BoxLayout):
             return [0.16, 0.47, 0.96, 0.45]
 
     def cycle_score(self, side):
+        """Cycle a player's game score 0→1→2→0 and persist it.
+
+        Guards:
+        - BYE rows are non-interactive.
+        - Guests cannot change scores.
+        Behavior:
+        - Updates the corresponding score column in DB and commits.
+        - If both players reach 2-2 (invalid), reset to 0-0 to encourage resolution.
+        - Notifies parent via on_score_change callback if set.
+        """
         # cycles 0 -> 1 -> 2 -> 0 and writes to DB
         if self.bye:
             return
@@ -1470,6 +1505,12 @@ class EventScreen(Screen):
             pass
 
     def next_round(self):
+        """Advance the event to the next round or close if finished.
+
+        Computes Swiss-ish pairings using pairing.compute_next_round_pairings,
+        inserts matches for the next round, updates round_start_ts, and
+        triggers a background upload (for managers). Guests cannot advance.
+        """
         if not _is_manager():
             try:
                 App.get_running_app().show_toast('Guests cannot advance rounds')
