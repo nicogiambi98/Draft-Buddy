@@ -10,7 +10,8 @@ source.include_exts = py,kv,png,jpg,jpeg,svg,wav,ogg,mp3,txt,json
 source.include_patterns = assets/*
 
 # Pin stack compatible with Cython 0.29.x
-requirements = python3,kivy==2.2.1,sqlite3,pyjnius==1.4.2,cython==0.29.36,requests,certifi
+# Keep requirements platform-agnostic; add pyjnius locally only for Android builds
+requirements = python3,kivy==2.2.1,sqlite3,cython==0.29.36,requests,certifi
 
 orientation = portrait
 fullscreen = 0

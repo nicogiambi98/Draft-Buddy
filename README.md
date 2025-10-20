@@ -505,3 +505,134 @@ Bingo progress is stored inside the main SQLite database (events.db) so it syncs
 - bingo_meta: a single row tracking which rows/cols/diagonals/full are taken and who won them
 
 On first run after this change, if a legacy bingo_state.json is found in the persistent app folder and the bingo tables are empty, the app will import that JSON into the DB and delete the file. You do not need to manage bingo_state.json anymore.
+
+
+
+## iOS build (via kivy-ios and/or Buildozer on macOS)
+Prerequisites (must be on macOS):
+- macOS 12+ with Xcode installed (and Command Line Tools)
+- Python 3.10+ (system or via pyenv)
+- Homebrew recommended
+
+Two supported paths:
+
+Path A — Official kivy-ios + Xcode workflow (recommended)
+1) Install prerequisites
+   - brew install autoconf automake libtool pkg-config cmake
+   - python3 -m pip install --user kivy Cython==0.29.36
+2) Install kivy-ios toolchain
+   - python3 -m pip install kivy-ios
+   - toolchain build python3 kivy sqlite3
+     - Add other pure-Python deps as needed: toolchain build requests certifi
+3) Create an Xcode project from this app
+   - cd <some workspace dir>
+   - toolchain create DraftBuddy <PATH_TO_THIS_REPO>
+   - Open the generated DraftBuddy/DraftBuddy.xcodeproj in Xcode
+4) In Xcode
+   - Set signing team and bundle id (matches [app] package.domain + package.name)
+   - Select a target device (Simulator or a physical iPhone)
+   - Product → Run (⌘R) to build and launch
+
+Notes
+- The app’s SQLite DB lives inside the iOS app sandbox (handled automatically by db.py).
+- Assets in assets/ are bundled by default. The runtime DB is created in the sandbox; the seed copy from the repo is used only if no DB exists yet.
+- If you change Python deps, re-run toolchain build … for those recipes and clean in Xcode as needed.
+
+Path B — Buildozer (iOS target) on macOS
+- Buildozer can also drive the kivy-ios toolchain. Use:
+  - pip install buildozer
+  - buildozer ios debug
+- This repo’s buildozer.spec is platform-agnostic. For Android you may locally add pyjnius to requirements; for iOS do NOT include pyjnius.
+
+Troubleshooting
+- If you hit missing recipe errors, ensure the dependency is either a pure-Python package (vendored into the app) or has a kivy-ios recipe. Common ones in this app: kivy, sqlite3, requests, certifi.
+- Code signing errors: select a valid Team in Xcode and ensure the bundle id is unique.
+- Simulator vs device: some audio codecs may differ; if a sound doesn’t play in Simulator, test on device.
+
+Testing checklist on iOS
+- Launch the app, add a couple of players, create an event, start a round timer.
+- Quit and relaunch: events and players should persist (DB in sandbox).
+- Try sounds in the Draft Timer to confirm audio works.
+
+
+
+## Platform-specific Buildozer spec files (Android vs iOS)
+To avoid pyjnius version conflicts and make builds deterministic per platform, this repo includes two separate spec files alongside the neutral default buildozer.spec.
+
+- Android: use buildozer.android.spec (includes pyjnius)
+  - Example: buildozer -f buildozer.android.spec android debug
+- iOS: use buildozer.ios.spec (no pyjnius)
+  - Example (on macOS): buildozer -f buildozer.ios.spec ios debug
+
+Notes
+- The default buildozer.spec remains platform-agnostic and excludes pyjnius; you can keep using it if you prefer to add/remove dependencies locally.
+- Pinning pyjnius in the Android-specific spec helps prevent the version mismatch issues you previously encountered.
+- You can customize each spec independently (e.g., android.api, architectures, or iOS codesigning hints) without affecting the other platform.
+
+
+
+## iOS Build FAQ — “Ready to install?”
+Q: If I run `buildozer -f buildozer.ios.spec -v ios debug`, will it produce an iOS app that’s ready to install on my iPhone?
+
+Short answer: It produces a debuggable build and an Xcode project. To install on a physical device you must have code signing set up and install via Xcode or via Buildozer with codesigning configured.
+
+What actually happens:
+- Buildozer drives kivy-ios to generate an Xcode project for this app and builds it.
+- Simulator: You can run the app in the iOS Simulator without code signing.
+- Physical device: Apple requires code signing. You need a Developer account and a provisioning profile.
+
+How to get it onto a device:
+- Option A (Xcode, recommended):
+  1) After the command completes, open the generated Xcode project (Buildozer prints the path, under .buildozer/ios/platform/kivy-ios/…/DraftBuddy.xcodeproj).
+  2) In Xcode, select your Team, ensure the Bundle Identifier is unique, select your iPhone as the run target, then Product → Run. Xcode will sign and install the app to the device.
+- Option B (Buildozer deploy):
+  - First, configure codesigning in buildozer.ios.spec (see the ios.codesign.* commented keys) or ensure your Xcode default signing works for the bundle id.
+  - Then run: `buildozer -f buildozer.ios.spec ios debug deploy run`
+
+Creating an IPA for TestFlight/App Store:
+- Open the project in Xcode → Product → Archive, then distribute via App Store Connect/TestFlight.
+- Alternatively, `buildozer -f buildozer.ios.spec ios release` prepares a Release build, but distribution signing is still done via Xcode.
+
+Notes and tips:
+- You must run these commands on macOS with Xcode installed.
+- This repo’s iOS spec intentionally avoids pyjnius (Android-only).
+- For device install you need: an Apple Developer account, a valid signing certificate, and a provisioning profile that matches your bundle id (package.domain + package.name).
+
+
+
+## No macOS? Your alternatives for iOS builds
+If you don’t have a Mac, you still have several options to produce iOS build artifacts for this app:
+
+1) GitHub Actions (free macOS runners)
+- This repository includes a ready-to-use workflow at .github/workflows/ios.yml.
+- What it does: runs on macOS in the cloud, installs kivy-ios and Buildozer, and builds the iOS project.
+- What you get: build artifacts uploaded to the workflow run, including the generated Xcode project and (in some cases) a Simulator .app.
+- Limitations: device installation still requires Apple code signing. You can either:
+  - Download the generated Xcode project and have someone with Xcode sign and install; or
+  - Configure CI code signing (provide certificates/profiles as encrypted GitHub secrets and add a signing step with xcodebuild/fastlane).
+
+How to use it:
+- Push to main (or trigger manually via the Actions tab → “iOS build (kivy-ios via Buildozer)” → Run workflow).
+- After it finishes, download the artifacts:
+  - ios-build-tree: the entire .buildozer/ios folder (contains the generated Xcode project).
+  - xcode-projects: convenience artifact with .xcodeproj if detected.
+  - simulator-apps: any built .app for Simulator, if present.
+
+Optional: enable signing in CI
+- Add these secrets in your GitHub repo if you want to produce a device-installable IPA automatically:
+  - APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD (if using fastlane deliver/testflight)
+  - P12_CERT, P12_PASSWORD, MOBILEPROVISION (if doing manual signing)
+- Then add a step using fastlane or xcodebuild to archive and export. This is not enabled by default in the provided workflow.
+
+2) Rent-a-Mac / cloud macOS
+- Providers like MacStadium, Scaleway Apple Silicon, or AWS EC2 Mac let you rent a Mac in the cloud. Install Xcode, follow the README iOS steps, build/sign there.
+
+3) Third‑party CI services
+- Codemagic, Bitrise (macOS plans) can run kivy-ios/buildozer and handle signing if you upload your certificates/profiles.
+
+4) Collaborate with someone who has a Mac
+- Use the GitHub Actions artifact (Xcode project) and have them open/sign/run it in Xcode for device installation or App Store distribution.
+
+Notes
+- iOS Simulator builds do not require signing but only run on macOS. For installing on a physical iPhone/iPad, Apple requires code signing.
+- Android builds do not require a Mac. See the “Android build on Windows using WSL (Ubuntu)” section above for a reliable Windows pathway.
