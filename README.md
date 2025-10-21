@@ -433,14 +433,12 @@ Available variables and defaults
 
 users.txt format
 - Path: server/users.txt (next to server/main.py)
-- Each entry is username:password@manager_id[#role]
-  - role is optional; defaults to manager. Valid example roles: manager, guest.
+- Each entry is username:password@manager_id
 - Provide multiple entries separated by commas or newlines
-- Example (single line): manager:superSecret123@clandestini,guest:guest@clandestini#guest
+- Example (single line): manager:superSecret123@clandestini,guest:guest@clandestini
 - Example (multiline file):
   manager:superSecret123@clandestini
-  player1:safePwd@leagueB
-  viewer:readOnly@clandestini#guest
+  player1:safePwd@clandestini
 - Invalid lines are ignored and a warning is logged. If no valid users are provided, login will fail until you configure the file.
 
 Security guidance
