@@ -2421,6 +2421,11 @@ class BingoScreen(Screen):
         except Exception:
             pass
         try:
+            # Refresh achievements labels from DB in case they changed
+            self._ensure_achievements()
+        except Exception:
+            pass
+        try:
             self._load_players()
             self._render_players_list()
             # If current player no longer exists, reset selection
@@ -2437,7 +2442,7 @@ class BingoScreen(Screen):
 
     # ---- Paths and persistence ----
     def _achievements_path(self):
-        # Always read the bundled project file so user edits to achievements.json are reflected
+        # Always read the bundled project file so user edits to achievements-old.json are reflected
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'achievements.json')
 
     def _state_path(self):
@@ -2448,19 +2453,30 @@ class BingoScreen(Screen):
             return os.path.join(os.path.expanduser('~'), '.draft_buddy', 'bingo_state.json')
 
     def _ensure_achievements(self):
-        path = self._achievements_path()
+        """Load 9 achievement labels from the database (bingo_achievements).
+        Falls back to generic placeholders if the table is missing or incomplete.
+        IDs 1..9 are normalized to slots 0..8. Prefer the 'title' column.
+        """
         try:
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                arr = data.get('achievements') or []
-                if not isinstance(arr, list) or len(arr) != 9:
-                    arr = [f"Achievement {i+1}" for i in range(9)]
-                self.achievements = arr
-            else:
-                self.achievements = [f"Achievement {i+1}" for i in range(9)]
+            from db import DB
+            c = DB.cursor()
+            labels = [f"Achievement {i}" for i in range(9)]
+            try:
+                rows = c.execute("SELECT id, title FROM bingo_achievements ORDER BY id ASC").fetchall()
+            except Exception:
+                rows = []
+            if rows:
+                tmp = list(labels)
+                for rid, title in rows:
+                    try:
+                        slot = int(rid)
+                    except Exception:
+                        continue
+                    tmp[slot] = str(title)
+                labels = tmp
+            self.achievements = labels
         except Exception:
-            self.achievements = [f"Achievement {i+1}" for i in range(9)]
+            self.achievements = [f"Achievement {i}" for i in range(9)]
 
     def _load_state(self):
         """Load bingo state from the SQLite DB. If the bingo tables are empty

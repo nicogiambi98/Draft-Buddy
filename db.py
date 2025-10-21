@@ -237,18 +237,35 @@ def init_db():
             cur = c.execute("SELECT COUNT(*) FROM bingo_meta").fetchone()[0]
             if cur == 0:
                 c.execute("INSERT INTO bingo_meta(id) VALUES (1)")
-            # Seed achievements from achievements.json if empty
+            # Seed achievements from achievements JSON if empty; normalize id range if needed
             try:
                 ach_count = c.execute("SELECT COUNT(*) FROM bingo_achievements").fetchone()[0]
                 if ach_count == 0:
-                    ach_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'achievements.json')
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
                     import json
-                    if os.path.exists(ach_path):
+                    # Try multiple known file names (repository recently renamed/moved this file)
+                    candidates = [
+                        os.path.join(base_dir, 'achievements.json'),
+                        os.path.join(base_dir, 'achievements-old.json'),
+                        os.path.join(base_dir, 'achievements_backup.json'),
+                    ]
+                    ach_path = next((p for p in candidates if os.path.exists(p)), None)
+                    if ach_path:
                         with open(ach_path, 'r', encoding='utf-8') as f:
                             data = json.load(f)
                         items = data.get('achievements') or []
-                        for idx, title in enumerate(items):
+                        # Store using 0..8 ids (slots), consistent with public viewer
+                        for idx, title in enumerate(items[:9]):
                             c.execute("INSERT INTO bingo_achievements(id, title) VALUES (?, ?)", (idx, str(title)))
+                else:
+                    # If rows exist but use 1..9 ids, normalize them to 0..8
+                    try:
+                        rows = c.execute("SELECT MIN(id), MAX(id), COUNT(*) FROM bingo_achievements").fetchone()
+                        if rows and rows[0] == 1 and rows[1] == 9 and rows[2] == 9:
+                            # Shift primary keys down by 1
+                            c.execute("UPDATE bingo_achievements SET id = id - 1")
+                    except Exception:
+                        pass
             except Exception:
                 # Do not fail migration if seeding has issues
                 pass
