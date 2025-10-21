@@ -224,10 +224,34 @@ def init_db():
                 )
                 """
             )
+            # New: Achievements table holding 9 bingo labels
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bingo_achievements (
+                  id INTEGER PRIMARY KEY,
+                  title TEXT NOT NULL
+                )
+                """
+            )
             # Ensure a single meta row exists
             cur = c.execute("SELECT COUNT(*) FROM bingo_meta").fetchone()[0]
             if cur == 0:
                 c.execute("INSERT INTO bingo_meta(id) VALUES (1)")
+            # Seed achievements from achievements.json if empty
+            try:
+                ach_count = c.execute("SELECT COUNT(*) FROM bingo_achievements").fetchone()[0]
+                if ach_count == 0:
+                    ach_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'achievements.json')
+                    import json
+                    if os.path.exists(ach_path):
+                        with open(ach_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        items = data.get('achievements') or []
+                        for idx, title in enumerate(items):
+                            c.execute("INSERT INTO bingo_achievements(id, title) VALUES (?, ?)", (idx, str(title)))
+            except Exception:
+                # Do not fail migration if seeding has issues
+                pass
             conn.commit()
         except Exception:
             pass
