@@ -741,13 +741,8 @@ class MatchRow(BoxLayout):
                 DB.commit()
         except Exception:
             pass
-        # Manager: upload DB after score change
-        try:
-            app = App.get_running_app()
-            if app:
-                app._maybe_upload_after_write("match_score_change")
-        except Exception:
-            pass
+        # Do not upload on every score change to avoid starting the upload cooldown.
+        # Uploads will be triggered on major actions like advancing rounds or editing past rounds.
         # Notify parent/screen that a score changed
         try:
             if self.on_score_change:
