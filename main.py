@@ -37,7 +37,6 @@ from timer import DraftTimer, IconButton
 from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.metrics import dp
-from kivy.uix.scrollview import ScrollView
 from kivy.animation import Animation
 from db import get_db_path
 

@@ -236,12 +236,36 @@ Notes
 - The Dockerfile and railway.toml at the project root are optional and can be ignored if you’re running the server directly.
 - The Android/desktop app and this API are decoupled; you only need the API if you want remote upload/download and a public snapshot.
 
+## Host as a website (no Mac required)
+You can make your event data available on the web without building an iOS app by running the bundled FastAPI server and sharing the public view URL. This does not replace the Kivy app UI; it provides a read‑only web page for players to view standings/tables based on a snapshot of your SQLite DB that you publish.
+
+What this gives you
+- A public, read‑only page: /public/{manager_id}/view (works on iPhone, Android, desktop browsers)
+- A public downloadable SQLite snapshot: /public/{manager_id}/snapshot.sqlite
+- Simple manager auth to upload your local DB from the device/PC running the Kivy app
+
+Impact on the app
+- None required. You can keep using the current app as is.
+- Optional: add a one‑button “Publish to web” later that POSTs your events.db to the server (the API is already available).
+
+How to use
+1) Run or deploy the server (see below). Create server/users.txt with lines username:password@manager_id.
+2) Obtain a token via POST /auth/login.
+3) Upload your current events.db via POST /db/upload (Bearer token). This creates/updates the public snapshot and version.
+4) Share the URL https://<your-server>/public/<manager_id>/view with your players.
+5) Re‑upload whenever you want to refresh the page.
+
+Notes
+- The web page is read‑only and derived from your snapshot; live edits still happen in the app.
+- The viewer attempts to show common tables like standings/matches when present; otherwise it offers a generic table browser.
+
 ## Minimal server on Railway (upload/download + public snapshot)
 This repo now contains a tiny FastAPI server you can deploy to Railway to enable:
 - Manager login (one token per manager; offline-friendly)
 - Upload your local SQLite to the server (overwrite)
 - Download the server copy back to your device (overwrite local)
 - Public, read-only snapshot for players
+- Simple web viewer at /public/{manager_id}/view that renders the snapshot in the browser (read‑only)
 
 What you get
 - Endpoints:
@@ -327,6 +351,7 @@ Client integration notes
 - On Publish: POST /db/upload with the local events.db file.
 - On Pull: GET /db/download and overwrite local events.db.
 - Guest/Player: download /public/{manager_id}/snapshot.sqlite read-only.
+- Web View: share /public/{manager_id}/view for a simple, read‑only browser UI that shows tables and basic summaries.
 
 Persistence options
 - By default, Railway container storage may be ephemeral. This setup accepts that (simply re-upload if lost).
@@ -560,19 +585,32 @@ Testing checklist on iOS
 To avoid pyjnius version conflicts and make builds deterministic per platform, this repo includes two separate spec files alongside the neutral default buildozer.spec.
 
 - Android: use buildozer.android.spec (includes pyjnius)
-  - Example: buildozer -f buildozer.android.spec android debug
+  - Commands:
+    - cp buildozer.android.spec buildozer.spec
+    - buildozer android debug
 - iOS: use buildozer.ios.spec (no pyjnius)
-  - Example (on macOS): buildozer -f buildozer.ios.spec ios debug
+  - Commands (on macOS):
+    - cp buildozer.ios.spec buildozer.spec
+    - buildozer ios debug
 
 Notes
 - The default buildozer.spec remains platform-agnostic and excludes pyjnius; you can keep using it if you prefer to add/remove dependencies locally.
 - Pinning pyjnius in the Android-specific spec helps prevent the version mismatch issues you previously encountered.
 - You can customize each spec independently (e.g., android.api, architectures, or iOS codesigning hints) without affecting the other platform.
 
+### Troubleshooting: `buildozer # Unknown command -f`
+If you see this error, your Buildozer version likely doesn’t support the `-f`/`--config` flag ordering used in some guides. Use one of the following instead:
+- Easiest: copy the desired spec file to `buildozer.spec` and run the command:
+  - Android: `cp buildozer.android.spec buildozer.spec && buildozer android debug`
+  - iOS (macOS): `cp buildozer.ios.spec buildozer.spec && buildozer ios debug`
+- Or upgrade Buildozer to the latest version and try again.
+
+Note: The GitHub Actions workflow already uses the copy approach for compatibility.
+
 
 
 ## iOS Build FAQ — “Ready to install?”
-Q: If I run `buildozer -f buildozer.ios.spec -v ios debug`, will it produce an iOS app that’s ready to install on my iPhone?
+Q: If I run `cp buildozer.ios.spec buildozer.spec && buildozer -v ios debug`, will it produce an iOS app that’s ready to install on my iPhone?
 
 Short answer: It produces a debuggable build and an Xcode project. To install on a physical device you must have code signing set up and install via Xcode or via Buildozer with codesigning configured.
 
@@ -587,11 +625,11 @@ How to get it onto a device:
   2) In Xcode, select your Team, ensure the Bundle Identifier is unique, select your iPhone as the run target, then Product → Run. Xcode will sign and install the app to the device.
 - Option B (Buildozer deploy):
   - First, configure codesigning in buildozer.ios.spec (see the ios.codesign.* commented keys) or ensure your Xcode default signing works for the bundle id.
-  - Then run: `buildozer -f buildozer.ios.spec ios debug deploy run`
+  - Then run: `cp buildozer.ios.spec buildozer.spec && buildozer ios debug deploy run`
 
 Creating an IPA for TestFlight/App Store:
 - Open the project in Xcode → Product → Archive, then distribute via App Store Connect/TestFlight.
-- Alternatively, `buildozer -f buildozer.ios.spec ios release` prepares a Release build, but distribution signing is still done via Xcode.
+- Alternatively, `cp buildozer.ios.spec buildozer.spec && buildozer ios release` prepares a Release build, but distribution signing is still done via Xcode.
 
 Notes and tips:
 - You must run these commands on macOS with Xcode installed.

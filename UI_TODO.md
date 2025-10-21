@@ -1,159 +1,98 @@
-# Draft-Buddy UI/UX Improvement Plan (Roadmap)
+# Draft-Buddy UI/UX TODO — Fresh List
 
-Purpose: Make the app feel more fluid, modern, and natural — both visually and functionally — while staying lightweight and consistent across desktop and mobile (Kivy).
+Updated: 2025-10-21 08:52 (local)
 
-The items below are grouped by phases to enable incremental delivery. Each task has clear acceptance criteria. Prioritize top to bottom within each phase.
+Goal: Make Draft-Buddy feel fast, focused, and friendly on phones and desktops, without bloating the codebase. This list replaces the previous roadmap and removes items that are already implemented (e.g., BottomNav and in-app toasts).
 
 
-## Phase 0 — Baseline polish (quick wins)
-- Unify spacing and padding
-  - Action: Audit all layouts in ui.kv to use dp() consistently (8/12/16 spacing scale). Prefer spacing: dp(8–12), padding: dp(10–16).
+## Immediate (quick wins)
+- Tighten spacing and alignment
+  - Action: Standardize spacing/padding to a simple scale using dp() (8/12/16). Remove stray px literals.
   - Files: ui.kv
-  - Acceptance: No mixed px values; Scan shows dp() everywhere; visual rhythm is consistent.
+  - Acceptance: Visual rhythm feels consistent; quick scan finds only dp(...).
 
-- Consistent typography
-  - Action: Define a small set of font sizes and weights for titles, section headers, body, captions; apply via reusable classes in kv (e.g., <TitleLabel@Label>, <HeaderLabel@Label>, <BodyLabel@Label>).
+- Typography tokens
+  - Action: Add minimal text styles via reusable kv rules (Title, Subtitle, Body, Caption) and apply to major screens.
   - Files: ui.kv
-  - Acceptance: All Labels use one of the typography classes; no inline font_size sprinkled ad-hoc.
+  - Acceptance: No ad-hoc font_size on Labels where tokens apply; headings are visually distinct.
 
-- Button look and feel
-  - Action: Create <PrimaryButton@Button> and <SecondaryButton@Button> with consistent height, min_width, padding, and background_color/normal/down images or canvas instructions.
+- Primary/Secondary button styles
+  - Action: Provide consistent button height, padding, and rounded background via canvas; keep colors readable in light backgrounds.
   - Files: ui.kv
-  - Acceptance: No raw Button used for primary flows; tap target >= dp(44) height.
+  - Acceptance: Key actions look consistent; tap targets ≥ dp(44) high.
 
-- Input affordances and validation
-  - Action: Ensure TextInput fields have hint_text, proper multiline False where relevant, and on_enter triggers focus navigation or submit; trim leading spaces.
-  - Files: ui.kv, main.py (focus_next if needed)
-  - Acceptance: Forms are keyboard-friendly; invalid states show feedback.
-
-
-## Phase 1 — Navigation and layout coherence
-- Bottom navigation consistency
-  - Action: Convert repeated footer nav rows into a reusable widget (<BottomNav@BoxLayout>) with equal-width buttons and active state, to keep screens consistent.
-  - Files: ui.kv
-  - Acceptance: All main screens share the same footer; current screen’s button shows active state.
-
-- Screen transitions
-  - Action: Replace NoTransition with SlideTransition or FadeTransition where appropriate; keep transition duration short (~0.15–0.2s) for fluid feel.
-  - Files: main.py
-  - Acceptance: Navigations animate subtly; no jarring jumps.
-
-- Safe areas and scroll behavior
-  - Action: Ensure ScrollView content has proper size_hint_y and minimum_height to avoid clipped or bouncy content; ensure headers are fixed and content scrolls.
-  - Files: ui.kv
-  - Acceptance: Long lists scroll smoothly; headers toolbars remain visible.
-
-
-## Phase 2 — Visual theme and feedback
-- Light/Dark theme scaffold
-  - Action: Define an AppTheme (Python or kv) with color tokens: primary, secondary, surface, on_surface, background, success, warning, error. Bind Button/Label colors to theme.
-  - Files: main.py (theme dict + properties), ui.kv (use theme refs)
-  - Acceptance: Single place to change colors; all widgets update without per-widget edits.
-
-- Visual feedback states
-  - Action: Use canvas.before to draw rounded rectangles and pressed/disabled states for PrimaryButton; add hover states on desktop (Window.mouse_pos) when available.
-  - Files: ui.kv, main.py (if hover handlers needed)
-  - Acceptance: Buttons clearly indicate hover/press/disabled.
-
-- Non-blocking toasts/snackbars
-  - Action: Implement lightweight toast/snackbar component for confirmations instead of intrusive popups where appropriate (e.g., “Player saved”).
-  - Files: ui.kv (<Toast@FloatLayout>), main.py (helper to show/hide)
-  - Acceptance: Short messages appear at bottom, auto-dismiss; popups only for decisions.
-
-
-## Phase 3 — Information architecture and density
-- Lists and cards
-  - Action: For players/events lists, create a <ListItem@BoxLayout> with title, subtitle, trailing actions (e.g., start, edit, delete), and consistent height (dp(56–64)). Optionally use a subtle card background.
-  - Files: ui.kv
-  - Acceptance: Lists are scannable; actions are consistent and discoverable.
-
-- Empty states
-  - Action: Add empty state views with friendly guidance and a primary action when lists are empty (e.g., “No players yet — Add your first player”).
-  - Files: ui.kv, main.py (conditional rendering)
-  - Acceptance: Empty lists don’t look broken; they invite action.
-
-- Progressive disclosure
-  - Action: Hide advanced options behind a chevron expander or an “Advanced” section to reduce clutter on first sight.
-  - Files: ui.kv
-  - Acceptance: Primary tasks are front-and-center; advanced available but tucked away.
-
-
-## Phase 4 — Motion and micro-interactions
-- Subtle micro-animations
-  - Action: Animate list item addition/removal, timer state changes (start/pause), and round transitions using Animation in Kivy (duration 0.15–0.25s, ease_in_out).
-  - Files: main.py, ui.kv, timer.py
-  - Acceptance: Animations feel quick and purposeful; no lag.
-
-- Timer visual improvements
-  - Action: Use a progress ring/bar synced to DraftTimer; color shift near thresholds (e.g., warning at 15s, danger at 5s). Gentle tick and optional vibration (if platform supports).
-  - Files: timer.py, ui.kv, assets (reuse existing sounds)
-  - Acceptance: Visual timer communicates time left without reading numbers.
-
-
-## Phase 5 — Accessibility and responsiveness
-- Accessibility basics
-  - Action: Ensure contrast ratios are acceptable (WCAG-ish), minimum touch targets dp(44), larger type size option via an App setting.
+- Form ergonomics
+  - Action: Ensure TextInput fields have hint_text, proper multiline usage, and enter/next flow; trim leading/trailing spaces before save.
   - Files: ui.kv, main.py
-  - Acceptance: App is usable on small screens and by users needing larger text.
+  - Acceptance: Adding players/events is fast from keyboard or touch; no accidental whitespace persists.
 
-- Responsive layout
-  - Action: Use size classes (compact/medium/expanded) based on Window.size; adjust paddings, grid columns, and typography scale accordingly.
-  - Files: main.py (size class computation), ui.kv (binds)
-  - Acceptance: Desktop/tablet show more columns; phone stays single column.
+- Empty states where lists can be empty
+  - Action: Provide friendly message and primary action when Players/Events have no items.
+  - Files: ui.kv, main.py
+  - Acceptance: First-time experience feels guided, not broken.
 
 
-## Phase 6 — Structure, code health, and performance
-- Separate kv from main.py
-  - Action: Move the inlined KV (if any) from main.py into ui.kv (or multiple kv files) to centralize styling and components.
-  - Files: main.py, ui.kv
-  - Acceptance: No large KV strings inside Python; easier to maintain.
-
-- Reusable components library
-  - Action: Define and reuse ui components: TitleBar, BottomNav, ListItem, PrimaryButton, Section, FormRow.
+## Near‑term (visual clarity and navigation)
+- Active state styling for BottomNav
+  - Action: Improve visual distinction for the current tab and ensure adequate contrast.
   - Files: ui.kv
-  - Acceptance: Fewer duplicated patterns across screens.
+  - Acceptance: Current tab is clearly highlighted on phone and desktop.
+
+- Subtle screen transitions
+  - Action: Use very short SlideTransition or FadeTransition where navigation benefits from context.
+  - Files: main.py
+  - Acceptance: Navigations feel fluid but snappy (< 0.2s).
+
+- Scroll behavior and safe areas
+  - Action: Verify ScrollView content sizing to prevent clipping; keep headers/toolbars fixed where appropriate.
+  - Files: ui.kv
+  - Acceptance: Long lists scroll smoothly; headers do not jitter.
+
+- Timer visualization improvements
+  - Action: Add a simple progress bar/ring bound to remaining time; change color near thresholds (15s warning, 5s danger). Reuse assets/tick.wav.
+  - Files: timer.py, ui.kv, assets
+  - Acceptance: Time pressure is readable at a glance, even without reading numbers.
+
+
+## Accessibility and responsiveness
+- Contrast and touch targets
+  - Action: Ensure minimum 4.5:1 for text on backgrounds where feasible; keep interactive elements ≥ dp(44).
+  - Files: ui.kv
+  - Acceptance: Basic WCAG-ish contrast; comfortably tappable controls.
+
+- Large text option
+  - Action: App setting that scales typography tokens ~1.2x.
+  - Files: main.py, ui.kv
+  - Acceptance: Users can toggle larger text and see it applied immediately.
+
+- Size classes
+  - Action: Define compact/medium/expanded based on Window.size and adjust paddings/columns accordingly.
+  - Files: main.py, ui.kv
+  - Acceptance: Desktop/tablet layouts show more content without crowding; phones remain single-column.
+
+
+## Code health and performance
+- Reusable UI bits
+  - Action: Extract common widgets (TitleBar, ListItem, Section row) to reduce duplication.
+  - Files: ui.kv
+  - Acceptance: Fewer repeated layouts; easier maintenance.
 
 - Performance hygiene
-  - Action: Avoid heavy canvas shadows; cache backgrounds; throttle expensive layout passes; defer DB/IO from UI thread (Clock.schedule_once, threading if needed).
+  - Action: Avoid heavy canvas effects; keep DB/IO off UI thread; throttle expensive layout passes where possible.
   - Files: main.py, db.py
-  - Acceptance: Stable 60 fps feeling on typical devices.
+  - Acceptance: Smooth interactions on modest Android devices.
 
 
-## Nice-to-haves
-- Haptics on mobile
-  - Action: Integrate plyer to trigger vibration on key interactions (timer thresholds, match start), with a user toggle.
-
-- Theming presets
-  - Action: Provide two color presets (Classic, High-contrast) selectable in Settings; persist preference.
-
-
-## Concrete tasks (actionable checklist)
-- [ ] Create Theme class or App properties: colors (primary, on_primary, surface, on_surface, bg, success, warning, error). Wire to kv via app.theme.* or root.theme.*.
-- [ ] Define typography styles: <TitleLabel@Label>, <HeaderLabel@Label>, <BodyLabel@Label>, <CaptionLabel@Label> with font_size dp values and bold where needed.
-- [ ] Define buttons: <PrimaryButton@Button>, <SecondaryButton@Button> with height dp(48), padding dp(12, 10), rounded rect via canvas.before, state colors.
-- [ ] Build <BottomNav@BoxLayout> reusable widget; replace footer bars in Players, Events, League, Bingo, DraftTimer screens.
-- [ ] Switch ScreenManager to SlideTransition(duration=0.18) or FadeTransition where appropriate.
-- [ ] Add Toast helper: ui.kv component + App.show_toast(msg, timeout=2.0).
-- [ ] Implement empty states for Players and Events lists with icon/text/button.
-- [ ] Create <ListItem@BoxLayout> and retrofit players/events items with title/subtitle/actions.
-- [ ] Improve DraftTimer visualization: progress bar/ring bound to remaining time; sound cues reuse assets/tick.wav, warning color.
-- [ ] Add size classes (compact/medium/expanded) and bind paddings/columns accordingly.
-- [ ] Add setting for Large Text; scale typography tokens by 1.2x when enabled.
-- [ ] Review all TextInputs for proper hint_text, multiline=False, and enter/next behavior.
-- [ ] Replace remaining inline px spacing with dp().
-- [ ] Ensure contrast: verify color pairs; tweak theme if needed.
-- [ ] Add hover feedback on desktop for buttons and list items (optional).
+## Backlog / Ideas (nice to have)
+- Haptics on mobile via plyer (toggle in settings)
+- High-contrast theme preset (switchable)
+- Hover feedback on desktop for buttons/list items
+- Lightweight snackbar variant for longer messages
+- Simple onboarding tip on first launch
 
 
-## Notes on implementation in this repo
-- main.py already enforces a portrait-like window on desktop — good for testing phone proportions; keep it but make it opt-out via a command-line flag or an app setting later.
-- ui.kv already standardizes Button alignment; extend it into concrete Primary/Secondary styles instead of modifying each Button inline.
-- timer.py: expose remaining_fraction property in DraftTimer to bind progress UI; emit events at thresholds (15s, 5s) for color/sound.
-- db operations (db.py) should remain off the UI thread when loading/refreshing large lists; use Clock.schedule_once to keep UI responsive.
-
-
-## Acceptance for the whole initiative
-- Visual: UI looks consistent and modern, with coherent spacing, typography, and colors; key actions stand out.
-- Functional: Navigation is consistent and animated subtly; lists are scannable with empty states; timer conveys urgency visually.
-- Usability: Minimum touch targets achieved; larger text mode available; dark mode scaffold prepared.
-- Maintainability: Reusable components defined; kv separated and decluttered; color and type tokens centralized.
+## Acceptance for this iteration
+- Visual: Consistent spacing, typography tokens, and button styles across key screens.
+- Functional: Empty states in Players/Events; quick, low-latency transitions; clearer nav active state.
+- Usability: Adequate contrast and touch targets; optional large text mode.
+- Maintainability: Shared UI components extracted; dp() used consistently.
