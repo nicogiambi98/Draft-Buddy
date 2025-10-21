@@ -441,10 +441,21 @@ users.txt format
   player1:safePwd@clandestini
 - Invalid lines are ignored and a warning is logged. If no valid users are provided, login will fail until you configure the file.
 
-Security guidance
-- Always set a strong JWT_SECRET in production; rotating it invalidates existing tokens.
-- Keep server/users.txt out of version control. It is listed in .gitignore; verify it remains untracked.
-- Use strict file permissions on server/users.txt if other users share the machine/container.
+### Domains (playgroups) list
+- Path: server/domains.txt (next to server/main.py)
+- One domain per line; blanks ignored. Example:
+  clandestini
+  test
+- API: GET /domains returns { domains: [..], default: <first> }
+- Usage: When logging in, set playgroup to select which domain (e.g., "test") the token will operate on.
+- Example login body:
+  { "username":"manager", "password":"...", "remember":true, "playgroup":"test" }
+- Public snapshot and view URLs will be under /public/<playgroup>/...
+
+ Security guidance
+ - Always set a strong JWT_SECRET in production; rotating it invalidates existing tokens.
+ - Keep server/users.txt out of version control. It is listed in .gitignore; verify it remains untracked.
+ - Use strict file permissions on server/users.txt if other users share the machine/container.
 
 Quick setup examples
 
