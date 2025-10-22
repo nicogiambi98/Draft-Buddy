@@ -215,11 +215,13 @@ def generate_round_one(event_id: int) -> None:
 def compute_next_round_pairings(event_id: int):
     """
     Compute pairings for the next round (Swiss-ish):
-    - If odd number of players, assign a single BYE to the lowest-scoring player who hasn't had one yet.
+    - If odd number of players, assign a single BYE to the lowest-scoring player
+      who hasn't had one yet. Ties broken randomly among equals.
     - Pair remaining players by similar score while avoiding rematches if possible.
+      Randomness is used as a tie-breaker to add variety when multiple choices exist.
     - Returns list of tuples (p1, p2 or None, is_bye)
     """
-    # fetch all event_players ids
+    # fetch all event_players ids (stable base order by seating; randomness decides ties)
     players = [r[0] for r in DB.execute("SELECT id FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall()]
     if not players:
         return []
@@ -230,8 +232,6 @@ def compute_next_round_pairings(event_id: int):
     previous_pairs = set()
     cur = DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (event_id,))
     for p1, p2, s1, s2, bye in cur.fetchall():
-        p1 = p1
-        p2 = p2
         if bye == 1:
             if p1 in mp_map:
                 mp_map[p1] += 3
@@ -250,7 +250,7 @@ def compute_next_round_pairings(event_id: int):
     bye_candidate = None
     if len(players) % 2 == 1:
         had_byes = set(r[0] for r in DB.execute("SELECT player1 FROM matches WHERE event_id=? AND bye=1", (event_id,)).fetchall())
-        # lowest MP who hasn't had a bye; tie-break randomly
+        # lowest MP who hasn't had a bye; ties broken randomly
         sorted_by_mp = sorted(players, key=lambda pid: (mp_map.get(pid, 0), random.random()))
         for pid in sorted_by_mp:
             if pid not in had_byes:
@@ -261,7 +261,7 @@ def compute_next_round_pairings(event_id: int):
 
     # players to pair
     to_pair = [p for p in players if p != bye_candidate]
-    # sort by MP desc
+    # sort by MP desc; tie-break randomly for variety
     to_pair.sort(key=lambda p: (-mp_map.get(p, 0), random.random()))
 
     pairs = []
@@ -272,12 +272,11 @@ def compute_next_round_pairings(event_id: int):
     def backtrack(result):
         if len(used) == len(to_pair):
             return result
-        # pick next unpaired player
+        # pick next unpaired player (highest MP first given to_pair order)
         p = next(pid for pid in to_pair if pid not in used)
         used.add(p)
-        # candidates: remaining players, try closest MP first, no rematch
+        # candidates: remaining players, try closest MP first; random tie-break for variety
         candidates = [q for q in to_pair if q not in used]
-        # sort by score proximity, then random for variety
         candidates.sort(key=lambda q: (abs(mp_map.get(q, 0) - mp_map.get(p, 0)), random.random()))
         # 1) try without rematches
         for q in candidates:
@@ -288,7 +287,7 @@ def compute_next_round_pairings(event_id: int):
             if res is not None:
                 return res
             used.remove(q)
-        # 2) if no solution, allow rematch
+        # 2) if no solution, allow rematch (still deterministic order)
         for q in candidates:
             used.add(q)
             res = backtrack(result + [(p, q, False)])
@@ -300,12 +299,19 @@ def compute_next_round_pairings(event_id: int):
 
     res = backtrack([])
     if res is None:
-        # fallback greedy
+        # fallback greedy with random tie-breakers
         remaining = [p for p in to_pair]
         while remaining:
             p = remaining.pop(0)
-            # best candidate by proximity avoiding rematch if possible
-            candidates = sorted(remaining, key=lambda q: (frozenset((p, q)) in previous_pairs, abs(mp_map.get(q, 0) - mp_map.get(p, 0)), random.random()))
+            # best candidate by proximity, avoiding rematch flag where possible; random tie-breaker
+            candidates = sorted(
+                remaining,
+                key=lambda q: (
+                    frozenset((p, q)) in previous_pairs,
+                    abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
+                    random.random(),
+                ),
+            )
             q = candidates[0]
             remaining.remove(q)
             pairs.append((p, q, False))

@@ -1322,6 +1322,21 @@ class EventScreen(Screen):
                 self.ids.next_btn.text = "Finish Event"
             else:
                 self.ids.next_btn.text = "Next Round"
+        # Enable/disable Forward button: only when viewing mode and there exists a higher generated round
+        try:
+            max_row = DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id= ?", (self.event_id,)).fetchone()
+            max_r = int(max_row[0] or 0)
+        except Exception:
+            max_r = self.current_round or 1
+        is_viewing = False
+        try:
+            is_viewing = int(round_to_show) != int(self.current_round or 1)
+        except Exception:
+            is_viewing = False
+        try:
+            self.ids.forward_btn.disabled = (not _is_manager()) or (not (is_viewing and int(round_to_show) < int(max_r)))
+        except Exception:
+            pass
         # start or reset the round timer only if we are showing the actual current round
         if getattr(self, 'view_round', None) is None or int(round_to_show) == int(self.current_round):
             self.maybe_start_timer()
@@ -1460,6 +1475,33 @@ class EventScreen(Screen):
         self.view_round = r - 1
         self.refresh_matches()
 
+    def next_round_view(self):
+        # Guests cannot navigate rounds
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot change round view')
+            except Exception:
+                pass
+            return
+        # Navigate forward within existing rounds only (no recomputation)
+        r = self._display_round()
+        try:
+            max_row = DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+            max_r = int(max_row[0] or 0)
+        except Exception:
+            max_r = self.current_round or r
+        if r < max_r:
+            self.view_round = r + 1
+            self.refresh_matches()
+        else:
+            # If we're not viewing current round, jump back to current
+            try:
+                if int(r) != int(self.current_round or 1):
+                    self.view_round = int(self.current_round or 1)
+                    self.refresh_matches()
+            except Exception:
+                pass
+
     def _on_match_score_changed(self, row_widget: 'MatchRow'):
         # Called after a score changes. If editing a past or closed event, purge future rounds and reactivate.
         try:
@@ -1476,6 +1518,11 @@ class EventScreen(Screen):
         if need_reopen:
             # Delete matches for rounds greater than edited_round
             DB.execute("DELETE FROM matches WHERE event_id=? AND round>?", (self.event_id, edited_round))
+            # Zero all non-BYE scores in the edited round to avoid stale results
+            try:
+                DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=? AND bye=0", (self.event_id, edited_round))
+            except Exception:
+                pass
             now_ts = int(time.time())
             DB.execute("UPDATE events SET status='active', current_round=?, round_start_ts=? WHERE id=?", (edited_round, now_ts, self.event_id))
             DB.commit()
@@ -1586,6 +1633,7 @@ class SeatingScreen(Screen):
     rounds = NumericProperty(3)
     round_time = NumericProperty(1800)
     event_id = NumericProperty(0)
+    can_forward = BooleanProperty(False)
 
     def set_data(self, selected_list, name, etype, rounds, round_time):
         # selected_list as list of tuples (player_id or None, display_name)
@@ -1616,6 +1664,11 @@ class SeatingScreen(Screen):
         for idx, (pid, name) in enumerate(self.seating, start=1):
             lbl = Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1))
             cont.add_widget(lbl)
+        # Mark seating as changed so Round 1 can be regenerated on Begin
+        try:
+            self._seating_dirty = True
+        except Exception:
+            pass
         # If an event is already created and still before Round 1, persist new seating order
         try:
             if getattr(self, 'event_id', 0) and DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()[0] == 0:
@@ -1670,6 +1723,11 @@ class SeatingScreen(Screen):
     def load_existing_event(self, event_id):
         # Load an existing not-started event into the seating screen
         self.event_id = int(event_id)
+        # Reset seating-dirty flag when loading an event afresh
+        try:
+            self._seating_dirty = False
+        except Exception:
+            pass
         row = DB.execute("SELECT name, type, rounds, round_time, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
         if not row:
             return
@@ -1696,6 +1754,43 @@ class SeatingScreen(Screen):
         cont.clear_widgets()
         for idx, (pid, name) in enumerate(self.seating, start=1):
             cont.add_widget(Label(text=f"{idx}. {name}" + (" (guest)" if pid is None else ""), size_hint_y=None, height=28, color=(1,1,1,1)))
+        # Update forward availability
+        self._recompute_can_forward()
+
+    def _recompute_can_forward(self):
+        try:
+            if not getattr(self, 'event_id', 0):
+                self.can_forward = False
+                return
+            row = DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+            cnt = int(row[0]) if row and row[0] is not None else 0
+            self.can_forward = cnt > 0
+        except Exception:
+            self.can_forward = False
+
+    def forward_to_matches(self):
+        # Guests cannot navigate rounds
+        if not _is_manager():
+            try:
+                App.get_running_app().show_toast('Guests cannot change round view')
+            except Exception:
+                pass
+            return
+        # Only navigate if we actually have matches already present
+        self._recompute_can_forward()
+        if not self.can_forward:
+            try:
+                App.get_running_app().show_toast('No matches to show yet')
+            except Exception:
+                pass
+            return
+        try:
+            ev = self.manager.get_screen('event')
+            ev.load_event(self.event_id)
+            # Do not alter round/view state; simply show event as-is
+            self.manager.current = 'event'
+        except Exception:
+            pass
 
     def confirm_and_begin(self):
         if not _is_manager():
@@ -1722,15 +1817,42 @@ class SeatingScreen(Screen):
                 round1_exists = bool(r and int(r[0]) > 0)
             except Exception:
                 pass
+            # If seating was randomized here, force regeneration of Round 1
+            if getattr(self, '_seating_dirty', False):
+                try:
+                    DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
+                    DB.commit()
+                except Exception:
+                    pass
+                generate_round_one(self.event_id)
+                try:
+                    self._seating_dirty = False
+                except Exception:
+                    pass
+                # Manager: upload DB after regenerating Round 1 from new seating
+                try:
+                    app = App.get_running_app()
+                    if app:
+                        app._maybe_upload_after_write("begin_round1_after_randomize")
+                except Exception:
+                    pass
+                self.manager.get_screen("event").load_event(self.event_id)
+                try:
+                    self.manager.get_screen("event").show_round(1)
+                except Exception:
+                    pass
+                self.manager.current = "event"
+                return
             # If user presses Begin Round 1 while event is in round 2+ or closed, revert to Round 1
             if status == 'closed' or cur_round > 1:
                 if not round1_exists:
                     # No Round 1 yet: generate it
                     generate_round_one(self.event_id)
                 else:
-                    # Keep Round 1 results, wipe subsequent rounds and reactivate at Round 1
+                    # Preserve Round 1 pairings, wipe later rounds and reactivate at Round 1; zero R1 scores
                     try:
                         DB.execute("DELETE FROM matches WHERE event_id=? AND round>1", (self.event_id,))
+                        DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=1 AND bye=0", (self.event_id,))
                         now_ts = int(time.time())
                         DB.execute("UPDATE events SET status='active', current_round=1, round_start_ts=? WHERE id=?", (now_ts, self.event_id))
                         DB.commit()

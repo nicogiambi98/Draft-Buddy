@@ -623,10 +623,16 @@
             size_hint_y: None
             height: dp(56)
             SecondaryButton:
-                text: "Previous Round"
+                text: "Back"
                 disabled: not app.is_mgr
                 opacity: 1 if app.is_mgr else 0.6
                 on_release: root.prev_round_view() if app.is_mgr else None
+            SecondaryButton:
+                id: forward_btn
+                text: "Forward"
+                disabled: not app.is_mgr
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.next_round_view() if app.is_mgr else None
             PrimaryButton:
                 id: next_btn
                 text: "Next Round"
@@ -715,6 +721,11 @@
                 disabled: not app.is_mgr
                 opacity: 1 if app.is_mgr else 0.6
                 on_release: root.randomize() if app.is_mgr else None
+            Button:
+                text: "Forward"
+                disabled: (not app.is_mgr) or (not root.can_forward)
+                opacity: 1 if app.is_mgr else 0.6
+                on_release: root.forward_to_matches() if app.is_mgr and root.can_forward else None
             Button:
                 text: "Begin Round 1"
                 disabled: not app.is_mgr
