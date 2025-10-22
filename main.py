@@ -2374,6 +2374,7 @@ class BingoScreen(Screen):
     current_player_name = StringProperty("")
     status_text = StringProperty("")
     achievements = ListProperty([])  # 9 texts
+    achievements_notes = ListProperty([])  # 9 notes matching achievements
     # state: { str(player_id): [bool]*9 }
     bingo_state = DictProperty({})
     # taken lines and winners
@@ -2448,7 +2449,7 @@ class BingoScreen(Screen):
             return os.path.join(os.path.expanduser('~'), '.draft_buddy', 'bingo_state.json')
 
     def _ensure_achievements(self):
-        """Load 9 achievement labels from the database (bingo_achievements).
+        """Load 9 achievement labels and notes from the database (bingo_achievements).
         Falls back to generic placeholders if the table is missing or incomplete.
         IDs 1..9 are normalized to slots 0..8. Prefer the 'title' column.
         """
@@ -2456,22 +2457,28 @@ class BingoScreen(Screen):
             from db import DB
             c = DB.cursor()
             labels = [f"Achievement {i}" for i in range(9)]
+            notes = ["" for _ in range(9)]
             try:
-                rows = c.execute("SELECT id, title FROM bingo_achievements ORDER BY id ASC").fetchall()
+                rows = c.execute("SELECT id, title, COALESCE(extra_notes, '') FROM bingo_achievements ORDER BY id ASC").fetchall()
             except Exception:
                 rows = []
             if rows:
-                tmp = list(labels)
-                for rid, title in rows:
+                tmp_labels = list(labels)
+                tmp_notes = list(notes)
+                for rid, title, extra in rows:
                     try:
                         slot = int(rid)
                     except Exception:
                         continue
-                    tmp[slot] = str(title)
-                labels = tmp
+                    tmp_labels[slot] = str(title)
+                    tmp_notes[slot] = str(extra) if extra is not None else ""
+                labels = tmp_labels
+                notes = tmp_notes
             self.achievements = labels
+            self.achievements_notes = notes
         except Exception:
             self.achievements = [f"Achievement {i}" for i in range(9)]
+            self.achievements_notes = ["" for _ in range(9)]
 
     def _load_state(self):
         """Load bingo state from the SQLite DB. If the bingo tables are empty
@@ -2698,15 +2705,58 @@ class BingoScreen(Screen):
             btn.background_down = ''
             # Guests cannot update bingo cells; keep buttons visible for guests
             can_edit = _is_manager()
-            # Only disable when the achievement is already done, so guests see normal opacity
-            btn.disabled = done
-            # Color: green if done, dark gray otherwise; no visual press feedback because background_down is blank
-            btn.background_color = (0.16,0.64,0.28,1) if done else (0.26,0.26,0.26,1)
-            if (not done) and can_edit:
-                def _on_press(_i=idx, _txt=txt):
-                    return lambda *_: self._confirm_mark(_i, _txt)
-                btn.bind(on_release=_on_press())
+            # Disable only for managers when already done; keep guests clickable to show info
+            btn.disabled = (done and can_edit)
+            # Base colors
+            base_color = (0.16, 0.64, 0.28, 1) if done else (0.26, 0.26, 0.26, 1)
+            press_color = (0.12, 0.48, 0.22, 1) if done else (0.20, 0.20, 0.20, 1)
+            btn.background_color = base_color
+            # Provide visual press feedback so buttons "feel" clickable
+            def _on_state(inst, value, _base=base_color, _press=press_color):
+                try:
+                    inst.background_color = _press if value == 'down' else _base
+                except Exception:
+                    pass
+            btn.bind(state=_on_state)
+            # Bind behavior for both guests and managers
+            def _on_release(_i=idx, _txt=txt, _done=done):
+                def _cb(*_):
+                    if _is_manager() and (not _done):
+                        self._confirm_mark(_i, _txt)
+                    else:
+                        self._open_achievement_info(_i)
+                return _cb
+            btn.bind(on_release=_on_release())
             grid.add_widget(btn)
+
+    def _open_achievement_info(self, idx: int):
+        try:
+            title = self.achievements[idx] if 0 <= idx < len(self.achievements) else f"Achievement {idx}"
+        except Exception:
+            title = f"Achievement {idx}"
+        try:
+            notes = self.achievements_notes[idx] if 0 <= idx < len(self.achievements_notes) else ""
+        except Exception:
+            notes = ""
+        body = notes.strip() if isinstance(notes, str) else ""
+        if not body:
+            body = "No additional notes for this achievement."
+        # Build popup content with scrollable label
+        content = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True, bar_width=0)
+        lbl = Label(text=body, halign='left', valign='top', size_hint_y=None)
+        lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', (inst.width - dp(8), None)))
+        lbl.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+        sv.add_widget(lbl)
+        content.add_widget(sv)
+        btns = BoxLayout(size_hint_y=None, height=dp(40))
+        ok = Button(text='OK')
+        btns.add_widget(ok)
+        content.add_widget(btns)
+        popup = Popup(title=title, content=content, size_hint=(0.9, 0.55), auto_dismiss=True)
+        ok.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
 
     def _confirm_mark(self, idx, ach_text):
         if not _is_manager():

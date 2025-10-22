@@ -229,7 +229,8 @@ def init_db():
                 """
                 CREATE TABLE IF NOT EXISTS bingo_achievements (
                   id INTEGER PRIMARY KEY,
-                  title TEXT NOT NULL
+                  title TEXT NOT NULL,
+                  extra_notes TEXT DEFAULT ''
                 )
                 """
             )
@@ -239,6 +240,13 @@ def init_db():
                 c.execute("INSERT INTO bingo_meta(id) VALUES (1)")
             # Seed achievements from achievements JSON if empty; normalize id range if needed
             try:
+                # Ensure extra_notes column exists for older databases
+                try:
+                    cols = [r[1] for r in c.execute("PRAGMA table_info(bingo_achievements)").fetchall()]
+                    if 'extra_notes' not in cols:
+                        c.execute("ALTER TABLE bingo_achievements ADD COLUMN extra_notes TEXT DEFAULT ''")
+                except Exception:
+                    pass
                 ach_count = c.execute("SELECT COUNT(*) FROM bingo_achievements").fetchone()[0]
                 if ach_count == 0:
                     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -256,7 +264,7 @@ def init_db():
                         items = data.get('achievements') or []
                         # Store using 0..8 ids (slots), consistent with public viewer
                         for idx, title in enumerate(items[:9]):
-                            c.execute("INSERT INTO bingo_achievements(id, title) VALUES (?, ?)", (idx, str(title)))
+                            c.execute("INSERT INTO bingo_achievements(id, title, extra_notes) VALUES (?, ?, ?)", (idx, str(title), ''))
                 else:
                     # If rows exist but use 1..9 ids, normalize them to 0..8
                     try:
