@@ -25,6 +25,7 @@ from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.image import Image
+from kivy.core.window import Window
 
 GardenSvgWidget = None
 GardenSvgInstruction = None
@@ -472,6 +473,11 @@ class DraftTimer(BoxLayout):
             self._update_spinner_state()
         except Exception:
             pass
+        # Ensure device stays awake while an active timer is running
+        try:
+            self._set_keep_awake(True)
+        except Exception:
+            pass
         if self.current_round > 0 and self.paused and self.phase_duration > 0:
             # Resume current phase from the exact paused remaining value
             remaining = self.paused_remaining if self.paused_remaining is not None else self.get_remaining()
@@ -504,6 +510,11 @@ class DraftTimer(BoxLayout):
         # Ensure spinner dimmed while a timer phase is active
         try:
             self._update_spinner_state()
+        except Exception:
+            pass
+        # Make sure the screen does not sleep during active timer
+        try:
+            self._set_keep_awake(True)
         except Exception:
             pass
         # Clear any transition guard as we are actively in a phase now
@@ -545,6 +556,11 @@ class DraftTimer(BoxLayout):
                     pass
                 try:
                     self.time_label.text = "0"
+                except Exception:
+                    pass
+                # Allow the device to sleep again
+                try:
+                    self._set_keep_awake(False)
                 except Exception:
                     pass
 
@@ -777,6 +793,11 @@ class DraftTimer(BoxLayout):
             pass
         self.paused = False
         self.paused_remaining = None
+        # Keep device awake while a phase is running
+        try:
+            self._set_keep_awake(True)
+        except Exception:
+            pass
         seq = self.sequences[self.mode]
         if up_idx < len(seq):
             self.phase_duration = int(seq[up_idx])
@@ -849,6 +870,11 @@ class DraftTimer(BoxLayout):
             self._update_spinner_state()
         except Exception:
             pass
+        # Allow system to sleep while paused
+        try:
+            self._set_keep_awake(False)
+        except Exception:
+            pass
 
     def reset_all(self, instance):
         # Full reset of the timer state
@@ -878,6 +904,56 @@ class DraftTimer(BoxLayout):
             self._update_spinner_state()
         except Exception:
             pass
+        # Allow device to sleep again
+        try:
+            self._set_keep_awake(False)
+        except Exception:
+            pass
+
+    # ---- Keep screen awake handling ----
+    def _set_keep_awake(self, enable: bool):
+        """Prevent device from sleeping while the draft timer is active.
+
+        Cross-platform best effort:
+        - On Kivy desktop/mobile: toggle Window.allow_screensaver.
+        - On Android: additionally set FLAG_KEEP_SCREEN_ON via Android APIs if available.
+        """
+        # Avoid redundant toggles
+        if getattr(self, '_keep_awake_enabled', None) == bool(enable):
+            return
+        self._keep_awake_enabled = bool(enable)
+        # Kivy Window toggle (works on most platforms including Android)
+        try:
+            # When allow_screensaver is False, the screen should not dim/lock
+            Window.allow_screensaver = not enable
+        except Exception:
+            pass
+        # Android specific flag
+        if enable:
+            try:
+                import importlib
+                if importlib.util.find_spec('jnius') is not None:
+                    jnius = importlib.import_module('jnius')
+                    autoclass = jnius.autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    activity = PythonActivity.mActivity
+                    WindowManager = autoclass('android.view.WindowManager$LayoutParams')
+                    activity.getWindow().addFlags(WindowManager.FLAG_KEEP_SCREEN_ON)
+            except Exception:
+                # silently ignore if not on Android or pyjnius not available
+                pass
+        else:
+            try:
+                import importlib
+                if importlib.util.find_spec('jnius') is not None:
+                    jnius = importlib.import_module('jnius')
+                    autoclass = jnius.autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    activity = PythonActivity.mActivity
+                    WindowManager = autoclass('android.view.WindowManager$LayoutParams')
+                    activity.getWindow().clearFlags(WindowManager.FLAG_KEEP_SCREEN_ON)
+            except Exception:
+                pass
 
 class DraftTimerApp(App):
     def build(self):

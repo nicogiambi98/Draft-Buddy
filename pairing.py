@@ -299,22 +299,55 @@ def compute_next_round_pairings(event_id: int):
 
     res = backtrack([])
     if res is None:
-        # fallback greedy with random tie-breakers
-        remaining = [p for p in to_pair]
-        while remaining:
-            p = remaining.pop(0)
-            # best candidate by proximity, avoiding rematch flag where possible; random tie-breaker
-            candidates = sorted(
-                remaining,
-                key=lambda q: (
-                    frozenset((p, q)) in previous_pairs,
-                    abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
-                    random.random(),
-                ),
-            )
-            q = candidates[0]
-            remaining.remove(q)
-            pairs.append((p, q, False))
+        # No perfect (no-rematch) matching exists; attempt to minimize rematches.
+        used = set()
+        best_result = None
+        best_repeats = 10**9
+
+        def backtrack_min(result, repeats_so_far):
+            nonlocal best_result, best_repeats
+            # Prune if already worse than best
+            if repeats_so_far >= best_repeats:
+                return
+            if len(used) == len(to_pair):
+                best_result = list(result)
+                best_repeats = repeats_so_far
+                return
+            p = next(pid for pid in to_pair if pid not in used)
+            used.add(p)
+            candidates = [q for q in to_pair if q not in used]
+            # Prefer non-rematches and close MP; keep randomness last
+            candidates.sort(key=lambda q: (
+                frozenset((p, q)) in previous_pairs,
+                abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
+                random.random(),
+            ))
+            for q in candidates:
+                is_repeat = frozenset((p, q)) in previous_pairs
+                used.add(q)
+                backtrack_min(result + [(p, q, False)], repeats_so_far + (1 if is_repeat else 0))
+                used.remove(q)
+            used.remove(p)
+
+        backtrack_min([], 0)
+        if best_result is not None:
+            pairs = best_result
+        else:
+            # Extremely unlikely; fallback greedy
+            remaining = [p for p in to_pair]
+            while remaining:
+                p = remaining.pop(0)
+                candidates = sorted(
+                    remaining,
+                    key=lambda q: (
+                        frozenset((p, q)) in previous_pairs,
+                        abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
+                        random.random(),
+                    ),
+                )
+                q = candidates[0]
+                remaining.remove(q)
+                pairs.append((p, q, False))
     else:
         pairs = res
 
