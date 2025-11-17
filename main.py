@@ -1586,7 +1586,14 @@ class EventScreen(Screen):
                 app._maybe_upload_after_write("next_round")
         except Exception:
             pass
+        # Move UI to the new current round (avoid staying in preview of an older round)
         self.current_round = next_round
+        try:
+            # Clear any explicit round view so _display_round follows current_round
+            self.view_round = None
+        except Exception:
+            pass
+        # Refresh matches for the advanced round
         self.refresh_matches()
 
     def close_event(self, abort_current_round=True):

@@ -214,14 +214,22 @@ def generate_round_one(event_id: int) -> None:
 
 def compute_next_round_pairings(event_id: int):
     """
-    Compute pairings for the next round (Swiss-ish):
-    - If odd number of players, assign a single BYE to the lowest-scoring player
-      who hasn't had one yet. Ties broken randomly among equals.
-    - Pair remaining players by similar score while avoiding rematches if possible.
-      Randomness is used as a tie-breaker to add variety when multiple choices exist.
+    Compute pairings for the next round following a strict top-down rule:
+    - Determine standings (ranked by MP, OMW%, GW%, OGW%, name) and pair from
+      highest ranked to lowest.
+    - For each highest remaining player, pick the first available opponent in
+      rank order among remaining players that is not a rematch.
+    - If a later conflict makes it impossible to complete the round without
+      rematches, backtrack to the last couple and try the next available
+      opponent for that top player, still proceeding top-down.
+    - Only if no perfect (no-rematch) pairing exists will rematches be allowed,
+      and then the algorithm minimizes the number of rematches while preserving
+      the same top-down order.
+    - If odd number of players, assign a BYE to the lowest ranked player who
+      has not already received one (deterministic; no randomness).
     - Returns list of tuples (p1, p2 or None, is_bye)
     """
-    # fetch all event_players ids (stable base order by seating; randomness decides ties)
+    # Get all event players
     players = [r[0] for r in DB.execute("SELECT id FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall()]
     if not players:
         return []
@@ -246,68 +254,60 @@ def compute_next_round_pairings(event_id: int):
                 mp_map[p2] += 1
             previous_pairs.add(frozenset((p1, p2)))
 
-    # Determine BYE only if odd number of players
+    # Determine standings order (top-down) for deterministic pairing
+    standings = compute_standings(event_id)
+    ranked = [row['eid'] for row in standings if row['eid'] in mp_map]
+
+    # Determine BYE only if odd number of players (lowest ranked without prior BYE)
     bye_candidate = None
     if len(players) % 2 == 1:
         had_byes = set(r[0] for r in DB.execute("SELECT player1 FROM matches WHERE event_id=? AND bye=1", (event_id,)).fetchall())
-        # lowest MP who hasn't had a bye; ties broken randomly
-        sorted_by_mp = sorted(players, key=lambda pid: (mp_map.get(pid, 0), random.random()))
-        for pid in sorted_by_mp:
+        for pid in reversed(ranked):  # lowest ranked first
             if pid not in had_byes:
                 bye_candidate = pid
                 break
-        if bye_candidate is None:
-            bye_candidate = sorted_by_mp[0]
+        if bye_candidate is None and ranked:
+            bye_candidate = ranked[-1]
 
-    # players to pair
-    to_pair = [p for p in players if p != bye_candidate]
-    # sort by MP desc; tie-break randomly for variety
-    to_pair.sort(key=lambda p: (-mp_map.get(p, 0), random.random()))
+    # players to pair: standings order, top-down, excluding BYE
+    to_pair = [p for p in ranked if p != bye_candidate]
 
     pairs = []
 
-    # Backtracking pairing to avoid rematches when possible
+    # Strict top-down backtracking without rematches
     used = set()
 
-    def backtrack(result):
+    def backtrack_strict(result):
         if len(used) == len(to_pair):
             return result
-        # pick next unpaired player (highest MP first given to_pair order)
+        # Always pick the highest-ranked remaining player next
         p = next(pid for pid in to_pair if pid not in used)
         used.add(p)
-        # candidates: remaining players, try closest MP first; random tie-break for variety
-        candidates = [q for q in to_pair if q not in used]
-        candidates.sort(key=lambda q: (abs(mp_map.get(q, 0) - mp_map.get(p, 0)), random.random()))
-        # 1) try without rematches
-        for q in candidates:
-            if frozenset((p, q)) in previous_pairs:
+        # Candidates in rank order among remaining
+        for q in to_pair:
+            if q in used or q == p:
                 continue
+            if frozenset((p, q)) in previous_pairs:
+                continue  # skip rematches in strict phase
             used.add(q)
-            res = backtrack(result + [(p, q, False)])
-            if res is not None:
-                return res
-            used.remove(q)
-        # 2) if no solution, allow rematch (still deterministic order)
-        for q in candidates:
-            used.add(q)
-            res = backtrack(result + [(p, q, False)])
+            res = backtrack_strict(result + [(p, q, False)])
             if res is not None:
                 return res
             used.remove(q)
         used.remove(p)
         return None
 
-    res = backtrack([])
+    res = backtrack_strict([])
+
     if res is None:
-        # No perfect (no-rematch) matching exists; attempt to minimize rematches.
+        # Allow rematches but minimize their number, still pairing top-down
         used = set()
         best_result = None
         best_repeats = 10**9
 
         def backtrack_min(result, repeats_so_far):
             nonlocal best_result, best_repeats
-            # Prune if already worse than best
-            if repeats_so_far >= best_repeats:
+            if repeats_so_far > best_repeats:
                 return
             if len(used) == len(to_pair):
                 best_result = list(result)
@@ -315,14 +315,9 @@ def compute_next_round_pairings(event_id: int):
                 return
             p = next(pid for pid in to_pair if pid not in used)
             used.add(p)
-            candidates = [q for q in to_pair if q not in used]
-            # Prefer non-rematches and close MP; keep randomness last
-            candidates.sort(key=lambda q: (
-                frozenset((p, q)) in previous_pairs,
-                abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
-                random.random(),
-            ))
-            for q in candidates:
+            for q in to_pair:
+                if q in used or q == p:
+                    continue
                 is_repeat = frozenset((p, q)) in previous_pairs
                 used.add(q)
                 backtrack_min(result + [(p, q, False)], repeats_so_far + (1 if is_repeat else 0))
@@ -330,24 +325,7 @@ def compute_next_round_pairings(event_id: int):
             used.remove(p)
 
         backtrack_min([], 0)
-        if best_result is not None:
-            pairs = best_result
-        else:
-            # Extremely unlikely; fallback greedy
-            remaining = [p for p in to_pair]
-            while remaining:
-                p = remaining.pop(0)
-                candidates = sorted(
-                    remaining,
-                    key=lambda q: (
-                        frozenset((p, q)) in previous_pairs,
-                        abs(mp_map.get(q, 0) - mp_map.get(p, 0)),
-                        random.random(),
-                    ),
-                )
-                q = candidates[0]
-                remaining.remove(q)
-                pairs.append((p, q, False))
+        pairs = best_result or []
     else:
         pairs = res
 
