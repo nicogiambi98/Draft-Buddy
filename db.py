@@ -32,7 +32,17 @@ def set_playground_mode(enabled: bool):
     if enabled:
         original_db = _get_persistent_db_path()
         # Create a temporary file that we will use as the DB
-        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="playground_")
+        # On Android, we should use the app's internal storage directory to ensure write permissions
+        tmp_dir = None
+        try:
+            if platform in ('android', 'ios') and App is not None:
+                app = App.get_running_app()
+                if app:
+                    tmp_dir = app.user_data_dir
+        except Exception:
+            pass
+
+        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="playground_", dir=tmp_dir)
         os.close(fd)
         if os.path.exists(original_db):
             shutil.copy2(original_db, tmp_path)
