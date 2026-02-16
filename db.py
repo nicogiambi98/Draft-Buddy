@@ -30,23 +30,47 @@ def set_playground_mode(enabled: bool):
     global _PLAYGROUND_MODE, _PLAYGROUND_DB_PATH, DB
     _PLAYGROUND_MODE = enabled
     if enabled:
+        # Close existing connection if any before copying
+        try:
+            if DB:
+                DB.close()
+                DB = None
+        except Exception:
+            pass
+
         original_db = _get_persistent_db_path()
         # Create a temporary file that we will use as the DB
         # On Android, we should use the app's internal storage directory to ensure write permissions
         tmp_dir = None
         try:
-            if platform in ('android', 'ios') and App is not None:
-                app = App.get_running_app()
+            from kivy.utils import platform as _plat
+            from kivy.app import App as _App
+            if _plat in ('android', 'ios'):
+                app = _App.get_running_app()
                 if app:
                     tmp_dir = app.user_data_dir
         except Exception:
             pass
 
-        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="playground_", dir=tmp_dir)
-        os.close(fd)
-        if os.path.exists(original_db):
-            shutil.copy2(original_db, tmp_path)
-        _PLAYGROUND_DB_PATH = tmp_path
+        try:
+            fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="playground_", dir=tmp_dir)
+            os.close(fd)
+            # Ensure the source file exists and is not empty before copying
+            if os.path.exists(original_db):
+                # Use shutil.copy which is safer than copy2 on some mobile filesystems (metadata issues)
+                shutil.copy(original_db, tmp_path)
+            _PLAYGROUND_DB_PATH = tmp_path
+        except Exception as e:
+            # Fallback to no-playground if copy fails
+            _PLAYGROUND_MODE = False
+            _PLAYGROUND_DB_PATH = None
+            try:
+                from kivy.app import App as _App
+                app = _App.get_running_app()
+                if app:
+                    app.show_toast(f"Playground failed: {str(e)}")
+            except:
+                pass
     else:
         # First close the current DB connection
         try:
@@ -90,20 +114,25 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
     base_dir = None
 
     # On mobile, prefer Kivy App.user_data_dir when available
-    if plat in ('android', 'ios') and App is not None:
-        try:
-            app = App.get_running_app()
-        except Exception:
-            app = None
-        if app is not None:
-            try:
+    try:
+        from kivy.utils import platform as _plat
+        from kivy.app import App as _App
+        if _plat in ('android', 'ios'):
+            app = _App.get_running_app()
+            if app is not None:
                 base_dir = app.user_data_dir
-            except Exception:
-                base_dir = None
+    except Exception:
+        pass
 
     # Platform-specific handling
     if not base_dir:
-        if plat == 'android':
+        try:
+            from kivy.utils import platform as _plat
+            _p = _plat
+        except Exception:
+            _p = None
+
+        if _p == 'android':
             # ANDROID_PRIVATE points to the app-internal files dir (persistent, no permissions needed)
             base_dir = os.environ.get('ANDROID_PRIVATE')
             if not base_dir:
@@ -111,7 +140,7 @@ def _get_persistent_db_path(filename: str = "events.db") -> str:
                 arg = os.environ.get('ANDROID_ARGUMENT')
                 if arg:
                     base_dir = os.path.dirname(arg)
-        elif plat == 'ios':
+        elif _p == 'ios':
             # On iOS, expanduser("~") is safe and points to app sandbox
             base_dir = os.path.expanduser('~')
         else:
