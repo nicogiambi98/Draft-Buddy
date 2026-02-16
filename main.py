@@ -466,7 +466,7 @@ KV = r'''
 # ----------------------
 # DB helpers
 # ----------------------
-from db import DB
+import db
 
 # ----------------------
 # Nickname helpers
@@ -481,7 +481,7 @@ def _compute_unique_nickname(fullname: str) -> str:
       surname prefix ("First Su.", "First Sur.", ...) until unique.
     - As a last resort, append a numeric suffix ("First S. 2").
     This function only reads existing DB nicknames and returns a suggestion;
-    it does not write to the DB.
+    it does not write to the db.DB.
     """
     name = (fullname or "").strip()
     if not name:
@@ -491,7 +491,7 @@ def _compute_unique_nickname(fullname: str) -> str:
     surname = parts[1] if len(parts) > 1 else ""
     # fetch existing nicknames
     try:
-        rows = DB.execute("SELECT nickname FROM players WHERE nickname IS NOT NULL").fetchall()
+        rows = db.DB.execute("SELECT nickname FROM players WHERE nickname IS NOT NULL").fetchall()
         existing = set(r[0] for r in rows if r and r[0])
     except Exception:
         existing = set()
@@ -524,10 +524,10 @@ def _rebuild_all_nicknames():
     Within each group sharing the same first name (case-insensitive), compute the
     minimal unique surname prefix length so that "First S." style nicknames do not
     collide. Players without a surname get just "First"; duplicates receive a small
-    numeric suffix. Writes changes to the DB.
+    numeric suffix. Writes changes to the db.DB.
     """
     try:
-        rows = DB.execute("SELECT id, name FROM players ORDER BY id").fetchall()
+        rows = db.DB.execute("SELECT id, name FROM players ORDER BY id").fetchall()
     except Exception:
         return
     # Parse players into components while preserving original case
@@ -621,8 +621,8 @@ def _rebuild_all_nicknames():
     # apply updates
     try:
         for nick, pid in updates:
-            DB.execute("UPDATE players SET nickname=? WHERE id=?", (nick, pid))
-        DB.commit()
+            db.DB.execute("UPDATE players SET nickname=? WHERE id=?", (nick, pid))
+        db.DB.commit()
     except Exception:
         pass
 
@@ -728,17 +728,17 @@ class MatchRow(BoxLayout):
                 return
         if side == 1:
             self.score1 = (self.score1 + 1) % 3
-            DB.execute("UPDATE matches SET score_p1 = ? WHERE id = ?", (self.score1, self.match_id))
+            db.DB.execute("UPDATE matches SET score_p1 = ? WHERE id = ?", (self.score1, self.match_id))
         else:
             self.score2 = (self.score2 + 1) % 3
-            DB.execute("UPDATE matches SET score_p2 = ? WHERE id = ?", (self.score2, self.match_id))
-        DB.commit()
+            db.DB.execute("UPDATE matches SET score_p2 = ? WHERE id = ?", (self.score2, self.match_id))
+        db.DB.commit()
         # If both scores reach 2-2, reset to 0-0 (visual and DB)
         try:
             if int(self.score1) == 2 and int(self.score2) == 2:
                 self.score1, self.score2 = 0, 0
-                DB.execute("UPDATE matches SET score_p1 = 0, score_p2 = 0 WHERE id = ?", (self.match_id,))
-                DB.commit()
+                db.DB.execute("UPDATE matches SET score_p1 = 0, score_p2 = 0 WHERE id = ?", (self.match_id,))
+                db.DB.commit()
         except Exception:
             pass
         # Do not upload on every score change to avoid starting the upload cooldown.
@@ -831,7 +831,7 @@ class PlayersScreen(Screen):
             return
         # Avoid duplicate exact names (case-insensitive)
         try:
-            row = DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (name,)).fetchone()
+            row = db.DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (name,)).fetchone()
             if row:
                 try:
                     Popup(title="Duplicate name",
@@ -844,8 +844,8 @@ class PlayersScreen(Screen):
             pass
         # Compute initial nickname and insert
         nick = _compute_unique_nickname(name)
-        DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (name, nick))
-        DB.commit()
+        db.DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (name, nick))
+        db.DB.commit()
         # Recompute all nicknames to avoid new collisions
         _rebuild_all_nicknames()
         # Manager: upload DB after write
@@ -891,7 +891,7 @@ class PlayersScreen(Screen):
     def refresh(self):
         grid = self.ids.players_list
         grid.clear_widgets()
-        cur = DB.execute("SELECT id, name FROM players ORDER BY name")
+        cur = db.DB.execute("SELECT id, name FROM players ORDER BY name")
         for pid, name in cur.fetchall():
             self._add_player_row(pid, name)
 
@@ -899,7 +899,7 @@ class PlayersScreen(Screen):
         grid = self.ids.players_list
         grid.clear_widgets()
         q = "%" + (text or "") + "%"
-        cur = DB.execute("SELECT id, name FROM players WHERE name LIKE ? ORDER BY name", (q,))
+        cur = db.DB.execute("SELECT id, name FROM players WHERE name LIKE ? ORDER BY name", (q,))
         for pid, name in cur.fetchall():
             self._add_player_row(pid, name)
 
@@ -911,7 +911,7 @@ class PlayersScreen(Screen):
                 pass
             return
         # deny delete if player is in any active event
-        row = DB.execute("SELECT COUNT(*) FROM events e JOIN event_players ep ON e.id=ep.event_id WHERE e.status='active' AND ep.player_id=?", (pid,)).fetchone()
+        row = db.DB.execute("SELECT COUNT(*) FROM events e JOIN event_players ep ON e.id=ep.event_id WHERE e.status='active' AND ep.player_id=?", (pid,)).fetchone()
         if row and row[0] > 0:
             try:
                 Popup(title="Cannot delete",
@@ -922,11 +922,11 @@ class PlayersScreen(Screen):
             return
         # preserve historical names in past events
         try:
-            DB.execute("UPDATE event_players SET guest_name = COALESCE(guest_name, ?) WHERE player_id=?", (name, pid))
+            db.DB.execute("UPDATE event_players SET guest_name = COALESCE(guest_name, ?) WHERE player_id=?", (name, pid))
         except Exception:
             pass
-        DB.execute("DELETE FROM players WHERE id=?", (pid,))
-        DB.commit()
+        db.DB.execute("DELETE FROM players WHERE id=?", (pid,))
+        db.DB.commit()
         # Manager: upload DB after delete
         try:
             app = App.get_running_app()
@@ -950,7 +950,7 @@ class NewPlayerScreen(Screen):
         fullname = name.strip()
         # Avoid duplicate exact names (case-insensitive)
         try:
-            row = DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (fullname,)).fetchone()
+            row = db.DB.execute("SELECT id FROM players WHERE LOWER(name) = LOWER(?)", (fullname,)).fetchone()
             if row:
                 try:
                     Popup(title="Duplicate name",
@@ -962,8 +962,8 @@ class NewPlayerScreen(Screen):
         except Exception:
             pass
         nick = _compute_unique_nickname(fullname)
-        DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (fullname, nick))
-        DB.commit()
+        db.DB.execute("INSERT INTO players (name, nickname) VALUES (?, ?)", (fullname, nick))
+        db.DB.commit()
         _rebuild_all_nicknames()
         # Manager: upload DB after write
         try:
@@ -1040,7 +1040,7 @@ class CreateEventScreen(Screen):
             filt = ""
         if not hasattr(self, 'selected_ids'):
             self.selected_ids = set()
-        cur = DB.execute("SELECT id, COALESCE(nickname, name) as dname, name FROM players ORDER BY name")
+        cur = db.DB.execute("SELECT id, COALESCE(nickname, name) as dname, name FROM players ORDER BY name")
         rows = cur.fetchall()
         for pid, disp_name, full_name in rows:
             # Skip players already added to the event (they will appear in the Selected list)
@@ -1096,7 +1096,7 @@ class CreateEventScreen(Screen):
         if hasattr(self, 'selected_ids') and self.selected_ids:
             for pid in sorted(self.selected_ids, key=lambda x: x):
                 try:
-                    name = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
+                    name = db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                     name = name[0] if name else f"Player {pid}"
                 except Exception:
                     name = f"Player {pid}"
@@ -1149,7 +1149,7 @@ class CreateEventScreen(Screen):
             self.selected_ids = set()
         for pid in self.selected_ids:
             try:
-                row = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
+                row = db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                 if row:
                     chosen.append((pid, row[0]))
             except Exception:
@@ -1182,7 +1182,7 @@ class CreateEventScreen(Screen):
         if not hasattr(self, 'selected_ids'):
             self.selected_ids = set()
         for pid in self.selected_ids:
-            row = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
+            row = db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
             if row:
                 chosen.append((pid, row[0]))
         # plus any guests explicitly added
@@ -1207,7 +1207,7 @@ class EventsListScreen(Screen):
     def refresh(self):
         grid = self.ids.events_grid
         grid.clear_widgets()
-        cur = DB.execute("SELECT id, name, type, status FROM events ORDER BY (status='active') DESC, created_at DESC")
+        cur = db.DB.execute("SELECT id, name, type, status FROM events ORDER BY (status='active') DESC, created_at DESC")
         for eid, name, etype, status in cur.fetchall():
             btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=dp(68))
             def open_event(inst, _eid=eid, _status=status):
@@ -1216,7 +1216,7 @@ class EventsListScreen(Screen):
                     self.manager.current = 'standings'
                 else:
                     try:
-                        cur_round = DB.execute("SELECT current_round FROM events WHERE id=?", (_eid,)).fetchone()
+                        cur_round = db.DB.execute("SELECT current_round FROM events WHERE id=?", (_eid,)).fetchone()
                         cur_round = int(cur_round[0]) if cur_round and cur_round[0] is not None else 0
                     except Exception:
                         cur_round = 0
@@ -1259,7 +1259,7 @@ class EventScreen(Screen):
         self.event_id = event_id
         # Reset viewing override on explicit load
         self.view_round = None
-        row = DB.execute("SELECT name, rounds, current_round, status FROM events WHERE id=?", (event_id,)).fetchone()
+        row = db.DB.execute("SELECT name, rounds, current_round, status FROM events WHERE id=?", (event_id,)).fetchone()
         if not row:
             return
         name, rounds, current_round, status = row
@@ -1267,7 +1267,7 @@ class EventScreen(Screen):
         self.current_round = current_round
         # fetch round duration
         try:
-            rt = DB.execute("SELECT round_time FROM events WHERE id= ?", (event_id,)).fetchone()
+            rt = db.DB.execute("SELECT round_time FROM events WHERE id= ?", (event_id,)).fetchone()
             self.round_duration = int(rt[0]) if rt and rt[0] is not None else 0
         except Exception:
             self.round_duration = 0
@@ -1284,15 +1284,15 @@ class EventScreen(Screen):
             round_to_show = None
         if not round_to_show:
             round_to_show = self.current_round if self.current_round > 0 else 1
-        cur = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?",
+        cur = db.DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?",
                         (self.event_id, round_to_show))
         rows = cur.fetchall()
         if not rows and self.current_round == 0 and round_to_show == 1:
             # initialize first round view if needed
             self.current_round = 1
-            DB.execute("UPDATE events SET current_round=? WHERE id=?", (1, self.event_id))
-            DB.commit()
-            rows = DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?", (self.event_id,1)).fetchall()
+            db.DB.execute("UPDATE events SET current_round=? WHERE id=?", (1, self.event_id))
+            db.DB.commit()
+            rows = db.DB.execute("SELECT id, round, player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=? AND round=?", (self.event_id,1)).fetchall()
         for idx, (mid, rnd, p1, p2, s1, s2, bye) in enumerate(rows):
             p1name = get_name_for_event_player(self.event_id, p1)
             p2name = get_name_for_event_player(self.event_id, p2) if p2 else "BYE"
@@ -1315,7 +1315,7 @@ class EventScreen(Screen):
             pass
         self.ids.round_label.text = label
         # update next button label depending on last round (based on actual current round)
-        e = DB.execute("SELECT rounds FROM events WHERE id=?", (self.event_id,)).fetchone()
+        e = db.DB.execute("SELECT rounds FROM events WHERE id=?", (self.event_id,)).fetchone()
         if e:
             total_rounds = e[0]
             if self.current_round >= total_rounds:
@@ -1324,7 +1324,7 @@ class EventScreen(Screen):
                 self.ids.next_btn.text = "Next Round"
         # Enable/disable Forward button: only when viewing mode and there exists a higher generated round
         try:
-            max_row = DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id= ?", (self.event_id,)).fetchone()
+            max_row = db.DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id= ?", (self.event_id,)).fetchone()
             max_r = int(max_row[0] or 0)
         except Exception:
             max_r = self.current_round or 1
@@ -1368,7 +1368,7 @@ class EventScreen(Screen):
         # Ensure we have the round duration
         if not self.round_duration:
             try:
-                rt = DB.execute("SELECT round_time FROM events WHERE id=?", (self.event_id,)).fetchone()
+                rt = db.DB.execute("SELECT round_time FROM events WHERE id=?", (self.event_id,)).fetchone()
                 self.round_duration = int(rt[0]) if rt and rt[0] is not None else 0
             except Exception:
                 self.round_duration = 0
@@ -1376,7 +1376,7 @@ class EventScreen(Screen):
             return
         # read or initialize round_start_ts
         try:
-            row = DB.execute("SELECT round_start_ts FROM events WHERE id=?", (self.event_id,)).fetchone()
+            row = db.DB.execute("SELECT round_start_ts FROM events WHERE id=?", (self.event_id,)).fetchone()
             ts = int(row[0]) if row and row[0] is not None else 0
         except Exception:
             ts = 0
@@ -1384,8 +1384,8 @@ class EventScreen(Screen):
         if ts <= 0:
             # initialize start timestamp for this round
             try:
-                DB.execute("UPDATE events SET round_start_ts=? WHERE id=?", (now_ts, self.event_id))
-                DB.commit()
+                db.DB.execute("UPDATE events SET round_start_ts=? WHERE id=?", (now_ts, self.event_id))
+                db.DB.commit()
             except Exception:
                 pass
             ts = now_ts
@@ -1486,7 +1486,7 @@ class EventScreen(Screen):
         # Navigate forward within existing rounds only (no recomputation)
         r = self._display_round()
         try:
-            max_row = DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+            max_row = db.DB.execute("SELECT COALESCE(MAX(round),0) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
             max_r = int(max_row[0] or 0)
         except Exception:
             max_r = self.current_round or r
@@ -1509,7 +1509,7 @@ class EventScreen(Screen):
         except Exception:
             edited_round = self.current_round or 1
         # Read event status and current_round
-        ev = DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+        ev = db.DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
         if not ev:
             return
         status, cur_round = ev
@@ -1517,15 +1517,15 @@ class EventScreen(Screen):
         need_reopen = (status == 'closed') or (edited_round < (cur_round or 0))
         if need_reopen:
             # Delete matches for rounds greater than edited_round
-            DB.execute("DELETE FROM matches WHERE event_id=? AND round>?", (self.event_id, edited_round))
+            db.DB.execute("DELETE FROM matches WHERE event_id=? AND round>?", (self.event_id, edited_round))
             # Zero all non-BYE scores in the edited round to avoid stale results
             try:
-                DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=? AND bye=0", (self.event_id, edited_round))
+                db.DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=? AND bye=0", (self.event_id, edited_round))
             except Exception:
                 pass
             now_ts = int(time.time())
-            DB.execute("UPDATE events SET status='active', current_round=?, round_start_ts=? WHERE id=?", (edited_round, now_ts, self.event_id))
-            DB.commit()
+            db.DB.execute("UPDATE events SET status='active', current_round=?, round_start_ts=? WHERE id=?", (edited_round, now_ts, self.event_id))
+            db.DB.commit()
             # Manager: upload DB after reopening/editing past round
             try:
                 app = App.get_running_app()
@@ -1560,7 +1560,7 @@ class EventScreen(Screen):
             return
         # Ensure current matches saved (they are updated live on clicks)
         # Compute next pairings and insert matches for round+1 or finish
-        e = DB.execute("SELECT rounds, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+        e = db.DB.execute("SELECT rounds, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
         if not e:
             return
         total_rounds, cur_round = e
@@ -1574,11 +1574,11 @@ class EventScreen(Screen):
         # insert into matches
         for p1, p2, is_bye in pairings:
             sc1 = 2 if is_bye else 0
-            DB.execute("INSERT INTO matches (event_id, round, player1, player2, score_p1, score_p2, bye) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            db.DB.execute("INSERT INTO matches (event_id, round, player1, player2, score_p1, score_p2, bye) VALUES (?, ?, ?, ?, ?, 0, ?)",
                        (self.event_id, next_round, p1, p2, sc1, 1 if is_bye else 0))
         now_ts = int(time.time())
-        DB.execute("UPDATE events SET current_round=?, round_start_ts=? WHERE id=?", (next_round, now_ts, self.event_id))
-        DB.commit()
+        db.DB.execute("UPDATE events SET current_round=?, round_start_ts=? WHERE id=?", (next_round, now_ts, self.event_id))
+        db.DB.commit()
         # Manager: upload DB after advancing to next round
         try:
             app = App.get_running_app()
@@ -1610,16 +1610,16 @@ class EventScreen(Screen):
             pass
         # If abort_current_round is True, discard matches from the current (in-progress) round
         if abort_current_round:
-            row = DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+            row = db.DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
             if row:
                 cur = int(row[0] or 0)
                 if cur > 0:
                     # delete current round matches so standings only include completed previous rounds
-                    DB.execute("DELETE FROM matches WHERE event_id=? AND round=?", (self.event_id, cur))
+                    db.DB.execute("DELETE FROM matches WHERE event_id=? AND round=?", (self.event_id, cur))
                     # decrement stored current_round for consistency, though event is closing
-                    DB.execute("UPDATE events SET current_round=? WHERE id=?", (cur - 1, self.event_id))
-        DB.execute("UPDATE events SET status='closed' WHERE id=?", (self.event_id,))
-        DB.commit()
+                    db.DB.execute("UPDATE events SET current_round=? WHERE id=?", (cur - 1, self.event_id))
+        db.DB.execute("UPDATE events SET status='closed' WHERE id=?", (self.event_id,))
+        db.DB.commit()
         # Manager: upload DB after closing event
         try:
             app = App.get_running_app()
@@ -1678,15 +1678,15 @@ class SeatingScreen(Screen):
             pass
         # If an event is already created and still before Round 1, persist new seating order
         try:
-            if getattr(self, 'event_id', 0) and DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()[0] == 0:
+            if getattr(self, 'event_id', 0) and db.DB.execute("SELECT current_round FROM events WHERE id=?", (self.event_id,)).fetchone()[0] == 0:
                 for idx, (pid, name) in enumerate(self.seating):
                     if pid is None:
-                        DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id IS NULL AND guest_name=?",
+                        db.DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id IS NULL AND guest_name=?",
                                    (idx, self.event_id, name))
                     else:
-                        DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id=?",
+                        db.DB.execute("UPDATE event_players SET seating_pos=? WHERE event_id=? AND player_id=?",
                                    (idx, self.event_id, pid))
-                DB.commit()
+                db.DB.commit()
                 # Manager: upload DB after seating randomize
                 try:
                     app = App.get_running_app()
@@ -1707,7 +1707,7 @@ class SeatingScreen(Screen):
         if getattr(self, 'event_id', 0):
             return
         # Create the event row and event_players from current seating
-        cur = DB.cursor()
+        cur = db.DB.cursor()
         cur.execute("INSERT INTO events (name, type, rounds, round_time, status, current_round) VALUES (?, ?, ?, ?, ?, ?)",
                     (self.event_name, self.event_type, int(self.rounds), int(self.round_time), "active", 0))
         self.event_id = cur.lastrowid
@@ -1718,7 +1718,7 @@ class SeatingScreen(Screen):
             else:
                 cur.execute("INSERT INTO event_players (event_id, player_id, guest_name, seating_pos) VALUES (?, ?, ?, ?)",
                             (self.event_id, pid, None, idx))
-        DB.commit()
+        db.DB.commit()
         # Manager: upload DB after event creation
         try:
             app = App.get_running_app()
@@ -1735,7 +1735,7 @@ class SeatingScreen(Screen):
             self._seating_dirty = False
         except Exception:
             pass
-        row = DB.execute("SELECT name, type, rounds, round_time, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+        row = db.DB.execute("SELECT name, type, rounds, round_time, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
         if not row:
             return
         name, etype, rounds, rtime, cur_round = row
@@ -1744,7 +1744,7 @@ class SeatingScreen(Screen):
         self.rounds = int(rounds or 3)
         self.round_time = int(rtime or 1800)
         # Load seating by seating_pos
-        people = DB.execute("SELECT player_id, guest_name FROM event_players WHERE event_id=? ORDER BY seating_pos ASC", (self.event_id,)).fetchall()
+        people = db.DB.execute("SELECT player_id, guest_name FROM event_players WHERE event_id=? ORDER BY seating_pos ASC", (self.event_id,)).fetchall()
         self.selected = []
         self.seating = []
         for pid, gname in people:
@@ -1752,7 +1752,7 @@ class SeatingScreen(Screen):
                 self.selected.append((None, gname))
                 self.seating.append((None, gname))
             else:
-                pname = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
+                pname = db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
                 pname = pname[0] if pname else f"Player {pid}"
                 self.selected.append((pid, pname))
                 self.seating.append((pid, pname))
@@ -1769,7 +1769,7 @@ class SeatingScreen(Screen):
             if not getattr(self, 'event_id', 0):
                 self.can_forward = False
                 return
-            row = DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+            row = db.DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
             cnt = int(row[0]) if row and row[0] is not None else 0
             self.can_forward = cnt > 0
         except Exception:
@@ -1811,7 +1811,7 @@ class SeatingScreen(Screen):
             # Read event state
             status, cur_round = 'active', 0
             try:
-                row = DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
+                row = db.DB.execute("SELECT status, current_round FROM events WHERE id=?", (self.event_id,)).fetchone()
                 if row:
                     status = row[0]
                     cur_round = int(row[1] or 0)
@@ -1820,15 +1820,15 @@ class SeatingScreen(Screen):
             # Check if Round 1 already exists
             round1_exists = False
             try:
-                r = DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=? AND round=1", (self.event_id,)).fetchone()
+                r = db.DB.execute("SELECT COUNT(*) FROM matches WHERE event_id=? AND round=1", (self.event_id,)).fetchone()
                 round1_exists = bool(r and int(r[0]) > 0)
             except Exception:
                 pass
             # If seating was randomized here, force regeneration of Round 1
             if getattr(self, '_seating_dirty', False):
                 try:
-                    DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
-                    DB.commit()
+                    db.DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
+                    db.DB.commit()
                 except Exception:
                     pass
                 generate_round_one(self.event_id)
@@ -1858,11 +1858,11 @@ class SeatingScreen(Screen):
                 else:
                     # Preserve Round 1 pairings, wipe later rounds and reactivate at Round 1; zero R1 scores
                     try:
-                        DB.execute("DELETE FROM matches WHERE event_id=? AND round>1", (self.event_id,))
-                        DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=1 AND bye=0", (self.event_id,))
+                        db.DB.execute("DELETE FROM matches WHERE event_id=? AND round>1", (self.event_id,))
+                        db.DB.execute("UPDATE matches SET score_p1=0, score_p2=0 WHERE event_id=? AND round=1 AND bye=0", (self.event_id,))
                         now_ts = int(time.time())
-                        DB.execute("UPDATE events SET status='active', current_round=1, round_start_ts=? WHERE id=?", (now_ts, self.event_id))
-                        DB.commit()
+                        db.DB.execute("UPDATE events SET status='active', current_round=1, round_start_ts=? WHERE id=?", (now_ts, self.event_id))
+                        db.DB.commit()
                     except Exception:
                         pass
                 # Manager: upload DB after preparing Round 1/reset
@@ -1924,10 +1924,10 @@ class SeatingScreen(Screen):
             return
         try:
             # Remove all matches to guarantee standings show 0 points for everyone
-            DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
+            db.DB.execute("DELETE FROM matches WHERE event_id=?", (self.event_id,))
             # Mark event closed and reset round counters
-            DB.execute("UPDATE events SET status='closed', current_round=0 WHERE id=?", (self.event_id,))
-            DB.commit()
+            db.DB.execute("UPDATE events SET status='closed', current_round=0 WHERE id=?", (self.event_id,))
+            db.DB.commit()
             # Manager: upload DB after closing event from seating
             try:
                 app = App.get_running_app()
@@ -1954,7 +1954,7 @@ class StandingsScreen(Screen):
 
     def show_for_event(self, event_id):
         self.event_id = event_id
-        row = DB.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
+        row = db.DB.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
         title = row[0] if row else "Standings"
         self.ids.standings_title.text = f"{title} — Final Standings"
         self.refresh()
@@ -1962,7 +1962,7 @@ class StandingsScreen(Screen):
     def back_to_last_round(self):
         # Go back to the last round page from standings
         # Determine last round that has matches
-        row = DB.execute("SELECT MAX(round) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
+        row = db.DB.execute("SELECT MAX(round) FROM matches WHERE event_id=?", (self.event_id,)).fetchone()
         last_round = int(row[0]) if row and row[0] is not None else 0
         if last_round <= 0:
             # If no rounds, go to seating (first round seating)
@@ -2056,8 +2056,8 @@ class LeagueScreen(Screen):
     def on_kv_post(self, base_widget):
         # Ensure leagues table exists, then load UI (do not auto-create an active league)
         try:
-            from db import DB
-            DB.execute("""
+            import db
+            db.DB.execute("""
                 CREATE TABLE IF NOT EXISTS leagues (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   name TEXT,
@@ -2065,7 +2065,7 @@ class LeagueScreen(Screen):
                   end_ts INTEGER
                 )
             """)
-            DB.commit()
+            db.DB.commit()
         except Exception:
             pass
         # Load leagues and scoreboard
@@ -2079,8 +2079,8 @@ class LeagueScreen(Screen):
 
     def _load_leagues(self):
         try:
-            from db import DB
-            cur = DB.execute("SELECT id, name, start_ts, end_ts FROM leagues ORDER BY start_ts DESC")
+            import db
+            cur = db.DB.execute("SELECT id, name, start_ts, end_ts FROM leagues ORDER BY start_ts DESC")
             leagues = cur.fetchall()
             # Populate spinner
             sp = self.ids.get('league_spinner')
@@ -2151,9 +2151,9 @@ class LeagueScreen(Screen):
                 pass
             return
         try:
-            from db import DB
+            import db
             # Check if there is any active league (end_ts IS NULL)
-            row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+            row = db.DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
             if row:
                 # There is an active league -> close confirmation
                 self.confirm_close_league()
@@ -2234,11 +2234,11 @@ class LeagueScreen(Screen):
                 pass
             return
         try:
-            from db import DB
+            import db
             now = int(time.time())
             # Close any existing active league silently if present? We only start when none is active; keep simple insert.
-            DB.execute("INSERT INTO leagues (name, start_ts, end_ts) VALUES (?, ?, NULL)", (name, now))
-            DB.commit()
+            db.DB.execute("INSERT INTO leagues (name, start_ts, end_ts) VALUES (?, ?, NULL)", (name, now))
+            db.DB.commit()
             # Manager: upload DB after starting new league
             try:
                 app = App.get_running_app()
@@ -2250,7 +2250,7 @@ class LeagueScreen(Screen):
             self._load_leagues()
             # Find active league id (new one)
             try:
-                row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+                row = db.DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
                 if row:
                     self.current_league_id = int(row[0])
             except Exception:
@@ -2268,9 +2268,9 @@ class LeagueScreen(Screen):
             btn = self.ids.get('close_btn')
             if not btn:
                 return
-            from db import DB
+            import db
             # Button reflects global state: if any active league exists -> Close League, else Start New League
-            row = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+            row = db.DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
             if row:
                 btn.text = 'Close League'
             else:
@@ -2315,13 +2315,13 @@ class LeagueScreen(Screen):
                 pass
             return
         try:
-            from db import DB
+            import db
             now = int(time.time())
-            cur = DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1")
+            cur = db.DB.execute("SELECT id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1")
             row = cur.fetchone()
             if row:
-                DB.execute("UPDATE leagues SET end_ts=? WHERE id=?", (now, row[0]))
-                DB.commit()
+                db.DB.execute("UPDATE leagues SET end_ts=? WHERE id=?", (now, row[0]))
+                db.DB.commit()
                 # Manager: upload DB after closing league
                 try:
                     app = App.get_running_app()
@@ -2384,13 +2384,13 @@ class LeagueScreen(Screen):
 
     def _compute_league_rows(self):
         try:
-            from db import DB
+            import db
             # Find selected league window
             lid = int(self.current_league_id or 0)
-            row = DB.execute("SELECT start_ts, end_ts FROM leagues WHERE id=?", (lid,)).fetchone()
+            row = db.DB.execute("SELECT start_ts, end_ts FROM leagues WHERE id=?", (lid,)).fetchone()
             if not row:
                 # fallback to active
-                row = DB.execute("SELECT start_ts, end_ts, id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+                row = db.DB.execute("SELECT start_ts, end_ts, id FROM leagues WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1").fetchone()
                 if row and len(row) == 3:
                     self.current_league_id = row[2]
                     start_ts, end_ts = row[0], row[1]
@@ -2409,7 +2409,7 @@ class LeagueScreen(Screen):
             if end_ts is not None:
                 where += " AND round_start_ts <= ?"
                 params.append(int(end_ts))
-            ev_rows = DB.execute(f"SELECT id FROM events WHERE {where}", tuple(params)).fetchall()
+            ev_rows = db.DB.execute(f"SELECT id FROM events WHERE {where}", tuple(params)).fetchall()
             event_ids = [int(r[0]) for r in ev_rows]
             if not event_ids:
                 return []
@@ -2418,7 +2418,7 @@ class LeagueScreen(Screen):
             ep_map = {}  # eid -> {event_player_id: participant_key}
             participants = set()  # set of participant keys seen in eligible events
             qmarks = ','.join('?' for _ in event_ids)
-            for (ep_id, ev_id, pid, guest) in DB.execute(
+            for (ep_id, ev_id, pid, guest) in db.DB.execute(
                 f"SELECT id, event_id, player_id, guest_name FROM event_players WHERE event_id IN ({qmarks})",
                 event_ids
             ).fetchall():
@@ -2438,7 +2438,7 @@ class LeagueScreen(Screen):
             # Names: fill for registered and guest participants
             reg_ids = [k for k in participants if isinstance(k, int)]
             if reg_ids:
-                for pid, name in DB.execute(
+                for pid, name in db.DB.execute(
                     f"SELECT id, COALESCE(nickname, name) FROM players WHERE id IN ({','.join('?' for _ in reg_ids)})",
                     reg_ids
                 ).fetchall():
@@ -2451,7 +2451,7 @@ class LeagueScreen(Screen):
             # Iterate matches in eligible events
             for ev_id in event_ids:
                 # BYEs and matches
-                for p1, p2, s1, s2, bye in DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (ev_id,)).fetchall():
+                for p1, p2, s1, s2, bye in db.DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (ev_id,)).fetchall():
                     s1 = int(s1 or 0)
                     s2 = int(s2 or 0)
                     if bye == 1:
@@ -2583,8 +2583,8 @@ class BingoScreen(Screen):
         IDs 1..9 are normalized to slots 0..8. Prefer the 'title' column.
         """
         try:
-            from db import DB
-            c = DB.cursor()
+            import db
+            c = db.DB.cursor()
             labels = [f"Achievement {i}" for i in range(9)]
             notes = ["" for _ in range(9)]
             try:
@@ -2610,7 +2610,7 @@ class BingoScreen(Screen):
             self.achievements_notes = ["" for _ in range(9)]
 
     def _load_state(self):
-        """Load bingo state from the SQLite DB. If the bingo tables are empty
+        """Load bingo state from the SQLite db.DB. If the bingo tables are empty
         but a legacy bingo_state.json exists, import it once and remove the file.
         Fallback to empty state on errors."""
         # Defaults
@@ -2618,8 +2618,8 @@ class BingoScreen(Screen):
         self.taken = {'rows':[False]*3,'cols':[False]*3,'diags':[False]*2,'full': False}
         self.winners = {'rows':[None]*3,'cols':[None]*3,'diags':[None]*2,'full': None}
         try:
-            from db import DB
-            c = DB.cursor()
+            import db
+            c = db.DB.cursor()
             # Check if tables exist
             try:
                 c.execute("SELECT 1 FROM bingo_players LIMIT 1")
@@ -2688,7 +2688,7 @@ class BingoScreen(Screen):
                                 (winners.get('full') if winners else None),
                             ]
                         )
-                        DB.commit()
+                        db.DB.commit()
                         try:
                             os.remove(path)
                         except Exception:
@@ -2708,10 +2708,10 @@ class BingoScreen(Screen):
             pass
 
     def _save_state(self):
-        """Persist current in-memory bingo state to SQLite DB."""
+        """Persist current in-memory bingo state to SQLite db.DB."""
         try:
-            from db import DB
-            c = DB.cursor()
+            import db
+            c = db.DB.cursor()
             # Upsert all players
             for k, arr in (self.bingo_state or {}).items():
                 try:
@@ -2764,7 +2764,7 @@ class BingoScreen(Screen):
                     (w.get('full') if w else None),
                 ]
             )
-            DB.commit()
+            db.DB.commit()
         except Exception:
             pass
 
@@ -2772,8 +2772,8 @@ class BingoScreen(Screen):
     def _load_players(self):
         self._players = []
         try:
-            from db import DB
-            c = DB.cursor()
+            import db
+            c = db.DB.cursor()
             rows = c.execute("SELECT id, COALESCE(nickname, name) as n FROM players ORDER BY n COLLATE NOCASE").fetchall()
             for pid, name in rows:
                 self._players.append({'id': int(pid), 'name': name})
@@ -3165,8 +3165,8 @@ class BingoScreen(Screen):
             popup.dismiss()
             # Hard reset both per-player cells and global winners in the database
             try:
-                from db import DB
-                c = DB.cursor()
+                import db
+                c = db.DB.cursor()
                 c.execute("DELETE FROM bingo_players")
                 c.execute(
                     """
@@ -3180,7 +3180,7 @@ class BingoScreen(Screen):
                     WHERE id=1
                     """
                 )
-                DB.commit()
+                db.DB.commit()
                 # Manager: upload DB after bingo reset
                 try:
                     app = App.get_running_app()
@@ -3526,6 +3526,9 @@ class LoginScreen(Screen):
         # Use remember=True by default for guest for convenience
         self.do_login('guest', True)
 
+    def login_playground(self):
+        App.get_running_app().enter_playground_mode()
+
     def diagnose_connection(self):
         # Run a few simple checks and show results in a popup and status
         try:
@@ -3635,6 +3638,11 @@ class SettingsScreen(Screen):
             self.can_upload = False
 
     def do_logout(self):
+        app = App.get_running_app()
+        if app and app.is_playground:
+            app.exit_playground_mode()
+            return
+
         clear_auth()
         app = App.get_running_app()
         try:
@@ -4284,6 +4292,7 @@ class EventsApp(App):
     auth_role = StringProperty('guest')
     auth_username = StringProperty('')
     is_mgr = BooleanProperty(False)
+    is_playground = BooleanProperty(False)
 
     def refresh_auth_cache(self):
         try:
@@ -4568,12 +4577,36 @@ class EventsApp(App):
         return root
 
     def is_manager(self):
+        if self.is_playground:
+            return True
         try:
             role = (self.auth_role or '').strip().lower()
             uname = (self.auth_username or '').strip().lower()
             return bool(role == 'manager' or uname.startswith('manager'))
         except Exception:
             return _is_manager()
+
+    def enter_playground_mode(self):
+        from db import set_playground_mode
+        self.is_playground = True
+        set_playground_mode(True)
+        # Mock auth for playground
+        self.auth_role = 'manager'
+        self.auth_username = 'playground'
+        self.is_mgr = True
+        if self.root and hasattr(self.root, 'ids') and hasattr(self.root.ids, 'sm'):
+            self.root.ids.sm.current = 'eventslist'
+            self.switch_tab('eventslist')
+        self.show_toast("Entered Playground Mode (Temporary DB)")
+
+    def exit_playground_mode(self):
+        from db import set_playground_mode
+        self.is_playground = False
+        set_playground_mode(False)
+        self.refresh_auth_cache()
+        if self.root and hasattr(self.root, 'ids') and hasattr(self.root.ids, 'sm'):
+            self.root.ids.sm.current = 'login'
+        self.show_toast("Exited Playground Mode")
 
     def show_toast(self, message: str, timeout: float = 2.0):
         """Show a lightweight toast message at the bottom center, auto-dismiss."""

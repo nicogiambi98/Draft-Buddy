@@ -13,6 +13,7 @@ introduced in this documentation pass.
 import os
 import sqlite3
 import shutil
+import tempfile
 
 try:
     from kivy.app import App
@@ -22,14 +23,53 @@ except Exception:  # Allow importing outside Kivy (e.g., for tooling)
     platform = None
 
 
+_PLAYGROUND_MODE = False
+_PLAYGROUND_DB_PATH = None
+
+def set_playground_mode(enabled: bool):
+    global _PLAYGROUND_MODE, _PLAYGROUND_DB_PATH, DB
+    _PLAYGROUND_MODE = enabled
+    if enabled:
+        original_db = _get_persistent_db_path()
+        # Create a temporary file that we will use as the DB
+        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="playground_")
+        os.close(fd)
+        if os.path.exists(original_db):
+            shutil.copy2(original_db, tmp_path)
+        _PLAYGROUND_DB_PATH = tmp_path
+    else:
+        # First close the current DB connection
+        try:
+            if DB:
+                DB.close()
+                DB = None
+        except Exception:
+            pass
+
+        if _PLAYGROUND_DB_PATH and os.path.exists(_PLAYGROUND_DB_PATH):
+            # Try to remove multiple times if needed (Windows file lock delay)
+            import time
+            for _ in range(5):
+                try:
+                    os.remove(_PLAYGROUND_DB_PATH)
+                    break
+                except Exception:
+                    time.sleep(0.1)
+        _PLAYGROUND_DB_PATH = None
+    reload_db()
+
 def _get_persistent_db_path(filename: str = "events.db") -> str:
     """Resolve the database path.
+    - Playground Mode: use the temporary copy.
     - Android/iOS: use the app sandbox (user_data_dir/ANDROID_PRIVATE/~/).
     - Desktop (win/linux/macosx): store alongside the project (same folder as db.py).
     - Fallback: use a per-user folder (~/.draft_buddy).
     Also performs a one-time seed: if target doesn't exist but a bundled copy exists
     at a different path, copy it.
     """
+    if _PLAYGROUND_MODE and _PLAYGROUND_DB_PATH:
+        return _PLAYGROUND_DB_PATH
+
     # Determine platform first
     try:
         plat = platform if platform is not None else None

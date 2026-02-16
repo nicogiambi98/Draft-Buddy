@@ -1,7 +1,7 @@
 """Pairings and standings logic.
 
 This module implements Swiss-style standings and round pairings used by the app.
-It queries the shared DB connection (db.DB) and never mutates UI state directly.
+It queries the shared DB connection (db.DB.DB) and never mutates UI state directly.
 All algorithms are intentionally simple and predictable for small local events.
 
 Note: Only documentation has been added; functionality remains unchanged.
@@ -9,7 +9,7 @@ Note: Only documentation has been added; functionality remains unchanged.
 from typing import List, Tuple, Optional
 import random
 import time
-from db import DB
+import db
 
 
 def get_name_for_event_player(event_id: int, event_player_db_id: Optional[int]) -> str:
@@ -24,7 +24,7 @@ def get_name_for_event_player(event_id: int, event_player_db_id: Optional[int]) 
     # event_players stores player_id or guest_name, but matches store 'player1' as event_players.id
     if event_player_db_id is None:
         return "BYE"
-    cur = DB.execute("SELECT player_id, guest_name FROM event_players WHERE id=?", (event_player_db_id,))
+    cur = db.DB.execute("SELECT player_id, guest_name FROM event_players WHERE id=?", (event_player_db_id,))
     row = cur.fetchone()
     if not row:
         return "Unknown"
@@ -32,7 +32,7 @@ def get_name_for_event_player(event_id: int, event_player_db_id: Optional[int]) 
     if guest:
         return guest
     if pid:
-        r = DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
+        r = db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (pid,)).fetchone()
         return r[0] if r else "Unknown"
     return "Unknown"
 
@@ -52,7 +52,7 @@ def compute_standings(event_id: int):
     Sorted by: mp DESC, omwp DESC, gwp DESC, ogwp DESC, name ASC
     """
     # Fetch players for the event
-    players = DB.execute(
+    players = db.DB.execute(
         "SELECT id, player_id, guest_name FROM event_players WHERE event_id=? ORDER BY seating_pos",
         (event_id,)
     ).fetchall()
@@ -65,7 +65,7 @@ def compute_standings(event_id: int):
             return guest
         if pid:
             # Fetch full name and nickname; choose nickname only if full name length >= 20
-            r = DB.execute("SELECT name, nickname FROM players WHERE id=?", (pid,)).fetchone()
+            r = db.DB.execute("SELECT name, nickname FROM players WHERE id=?", (pid,)).fetchone()
             if r:
                 full_name = r[0] or ""
                 nick = r[1]
@@ -94,7 +94,7 @@ def compute_standings(event_id: int):
     }
 
     # Iterate matches
-    cur = DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (event_id,))
+    cur = db.DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (event_id,))
     for p1, p2, s1, s2, bye in cur.fetchall():
         s1 = int(s1 or 0)
         s2 = int(s2 or 0)
@@ -178,12 +178,12 @@ def generate_round_one(event_id: int) -> None:
     Side effects: Inserts into matches table and updates events.
     """
     # create round 1 pairings according to opposite-at-table rule
-    cur = DB.cursor()
-    rows = list(DB.execute("SELECT id, player_id, guest_name, seating_pos FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall())
+    cur = db.DB.cursor()
+    rows = list(db.DB.execute("SELECT id, player_id, guest_name, seating_pos FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall())
     if not rows:
         return
     # convert rows to list of (event_player_id, displayname)
-    seating = [(r[0], r[2] if r[2] else (DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (r[1],)).fetchone()[0])) for r in rows]
+    seating = [(r[0], r[2] if r[2] else (db.DB.execute("SELECT COALESCE(nickname, name) FROM players WHERE id=?", (r[1],)).fetchone()[0])) for r in rows]
     n = len(seating)
     # If odd, choose random bye - remove it from pairing list
     bye_id = None
@@ -209,7 +209,7 @@ def generate_round_one(event_id: int) -> None:
                     (event_id, 1, bye_id, None))
     # set current_round = 1 and start timer for round 1
     cur.execute("UPDATE events SET current_round=?, round_start_ts=? WHERE id=?", (1, int(time.time()), event_id))
-    DB.commit()
+    db.DB.commit()
 
 
 def compute_next_round_pairings(event_id: int):
@@ -230,7 +230,7 @@ def compute_next_round_pairings(event_id: int):
     - Returns list of tuples (p1, p2 or None, is_bye)
     """
     # Get all event players
-    players = [r[0] for r in DB.execute("SELECT id FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall()]
+    players = [r[0] for r in db.DB.execute("SELECT id FROM event_players WHERE event_id=? ORDER BY seating_pos", (event_id,)).fetchall()]
     if not players:
         return []
 
@@ -238,7 +238,7 @@ def compute_next_round_pairings(event_id: int):
     mp_map = {pid: 0 for pid in players}
     # also build set of previous pairings (frozenset of two ids)
     previous_pairs = set()
-    cur = DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (event_id,))
+    cur = db.DB.execute("SELECT player1, player2, score_p1, score_p2, bye FROM matches WHERE event_id=?", (event_id,))
     for p1, p2, s1, s2, bye in cur.fetchall():
         if bye == 1:
             if p1 in mp_map:
@@ -261,7 +261,7 @@ def compute_next_round_pairings(event_id: int):
     # Determine BYE only if odd number of players (lowest ranked without prior BYE)
     bye_candidate = None
     if len(players) % 2 == 1:
-        had_byes = set(r[0] for r in DB.execute("SELECT player1 FROM matches WHERE event_id=? AND bye=1", (event_id,)).fetchall())
+        had_byes = set(r[0] for r in db.DB.execute("SELECT player1 FROM matches WHERE event_id=? AND bye=1", (event_id,)).fetchall())
         for pid in reversed(ranked):  # lowest ranked first
             if pid not in had_byes:
                 bye_candidate = pid
