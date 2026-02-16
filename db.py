@@ -33,6 +33,8 @@ def set_playground_mode(enabled: bool):
         # Close existing connection if any before copying
         try:
             if DB:
+                # Ensure all pending changes are committed before closing for copy
+                DB.commit()
                 DB.close()
                 DB = None
         except Exception:
@@ -60,6 +62,8 @@ def set_playground_mode(enabled: bool):
                 # Use shutil.copy which is safer than copy2 on some mobile filesystems (metadata issues)
                 shutil.copy(original_db, tmp_path)
             _PLAYGROUND_DB_PATH = tmp_path
+            # Log for debugging (will show in adb logcat or console)
+            print(f"Playground mode: copied {original_db} to {tmp_path}")
         except Exception as e:
             # Fallback to no-playground if copy fails
             _PLAYGROUND_MODE = False

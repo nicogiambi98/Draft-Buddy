@@ -2054,20 +2054,6 @@ class LeagueScreen(Screen):
     current_league_id = NumericProperty(0)
 
     def on_kv_post(self, base_widget):
-        # Ensure leagues table exists, then load UI (do not auto-create an active league)
-        try:
-            import db
-            db.DB.execute("""
-                CREATE TABLE IF NOT EXISTS leagues (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  name TEXT,
-                  start_ts INTEGER NOT NULL,
-                  end_ts INTEGER
-                )
-            """)
-            db.DB.commit()
-        except Exception:
-            pass
         # Load leagues and scoreboard
         self._load_leagues()
         self.refresh()
@@ -4607,8 +4593,9 @@ class EventsApp(App):
 
     def enter_playground_mode(self):
         from db import set_playground_mode
-        self.is_playground = True
+        # First ensure we close any current DB connection safely
         set_playground_mode(True)
+        self.is_playground = True
         # Mock auth for playground
         self.auth_role = 'manager'
         self.auth_username = 'playground'
