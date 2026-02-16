@@ -3381,6 +3381,9 @@ def _is_manager() -> bool:
     Uses saved auth role and username prefix fallback (username startswith 'manager').
     """
     try:
+        app = App.get_running_app()
+        if app and getattr(app, 'is_playground', False):
+            return True
         auth = load_auth() or {}
         role = (auth.get('role') or '').strip().lower()
         uname = (auth.get('username') or '').strip().lower()
@@ -3406,6 +3409,9 @@ class LoginScreen(Screen):
             pass
 
     def do_login(self, password: str, remember: bool):
+        if App.get_running_app().is_playground:
+            App.get_running_app().show_toast("Login disabled in Playground Mode")
+            return
         password = password or ''
         base = _get_base_url(None)
         user = (self.username or '').strip()
@@ -3530,6 +3536,9 @@ class LoginScreen(Screen):
         App.get_running_app().enter_playground_mode()
 
     def diagnose_connection(self):
+        if App.get_running_app().is_playground:
+            App.get_running_app().show_toast("Diagnostics disabled in Playground Mode")
+            return
         # Run a few simple checks and show results in a popup and status
         try:
             import socket
@@ -3720,6 +3729,9 @@ class SettingsScreen(Screen):
             App.get_running_app().show_toast('Failed to replace DB')
 
     def do_download(self):
+        if App.get_running_app().is_playground:
+            App.get_running_app().show_toast("Download disabled in Playground Mode")
+            return
         auth = load_auth() or {}
         base = _get_base_url(auth)
         if not base:
@@ -3859,6 +3871,9 @@ class SettingsScreen(Screen):
             App.get_running_app().show_toast('Network error during download')
 
     def do_upload(self):
+        if App.get_running_app().is_playground:
+            App.get_running_app().show_toast("Upload disabled in Playground Mode")
+            return
         auth = load_auth() or {}
         base = _get_base_url(auth)
         token = auth.get('token')
@@ -4325,6 +4340,8 @@ class EventsApp(App):
     def _do_guest_download(self, *args):
         # Guard: only in guest mode
         try:
+            if self.is_playground:
+                return
             if self.is_manager():
                 return
         except Exception:
@@ -4456,10 +4473,12 @@ class EventsApp(App):
     def _maybe_upload_after_write(self, reason: str = ""):
         # Only for managers; guests never upload
         try:
+            if self.is_playground:
+                return
             if not self.is_manager():
                 return
         except Exception:
-            return
+            pass
         # Debounce and avoid overlapping uploads
         now = time.time()
         try:
