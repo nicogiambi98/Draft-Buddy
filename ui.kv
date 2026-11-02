@@ -11,7 +11,7 @@
         size_hint: 1, 1
         ScreenManager:
             id: sm
-            transition: SlideTransition(duration=0.18)
+            transition: SlideTransition(duration=0.3, direction='left')
         BottomNav:
             id: bottomnav
             height: dp(56) if sm.current != 'login' else 0
@@ -24,26 +24,55 @@
         pos: 0, 0
 
 # Typography tokens
+<Screen>:
+    canvas.before:
+        Color:
+            rgba: app.theme['background'] if hasattr(app, 'theme') else (0.05, 0.05, 0.05, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<TextInput>:
+    multiline: False
+    write_tab: False
+    background_color: (0.2, 0.2, 0.2, 1) if not self.focus else (0.25, 0.25, 0.25, 1)
+    foreground_color: (1, 1, 1, 1)
+    cursor_color: (1, 1, 1, 1)
+    padding: [dp(8), (self.height - self.line_height) / 2]
+
 <TitleLabel@Label>:
-    font_size: '20sp'
+    font_size: '18sp'
     bold: True
+    color: app.theme['on_background'] if hasattr(app, 'theme') else (1, 1, 1, 1)
 <HeaderLabel@Label>:
     font_size: '16sp'
     bold: True
+    color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
 <BodyLabel@Label>:
     font_size: '14sp'
+    color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
 <CaptionLabel@Label>:
     font_size: '12sp'
-    color: 0.6, 0.6, 0.6, 1
+    color: app.theme['on_surface'] if hasattr(app, 'theme') else (0.7, 0.7, 0.7, 1)
 
 # Global tactile feedback for all buttons
 <Button>:
     on_press:
-        Animation.cancel_all(self, 'opacity')
-        Animation(opacity=0.85, d=0.08, t='out_quad').start(self)
+        Animation.cancel_all(self, 'opacity', 'scale')
+        Animation(opacity=0.7, scale=0.96, d=0.05, t='out_quad').start(self)
     on_release:
-        Animation.cancel_all(self, 'opacity')
-        Animation(opacity=1.0, d=0.12, t='out_quad').start(self)
+        Animation.cancel_all(self, 'opacity', 'scale')
+        Animation(opacity=1.0, scale=1.0, d=0.15, t='out_elastic').start(self)
+
+    # Added scale support via canvas
+    canvas.before:
+        PushMatrix
+        Scale:
+            origin: self.center
+            x: getattr(self, 'scale', 1)
+            y: getattr(self, 'scale', 1)
+    canvas.after:
+        PopMatrix
 
 # Button styles
 <PrimaryButton@Button>:
@@ -133,6 +162,14 @@
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
             Button:
+                text: "Dashboard"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('dashboard')
+            Button:
                 text: "League Tracker"
                 size_hint_x: None
                 width: dp(140)
@@ -190,6 +227,14 @@
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
             Button:
+                text: "Dashboard"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('dashboard')
+            Button:
                 text: "League Tracker"
                 size_hint_x: None
                 width: dp(140)
@@ -246,6 +291,14 @@
                 color: 1,1,1,1
                 background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='eventslist') else (0.23,0.23,0.25,1))
                 on_release: app.switch_tab('eventslist')
+            Button:
+                text: "Dashboard"
+                size_hint_x: None
+                width: dp(120)
+                background_normal: ''
+                color: 1,1,1,1
+                background_color: (app.theme['primary'] if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1)) if hasattr(app,'theme') else ((0.16,0.47,0.96,1) if (hasattr(app,'root') and app.root and app.root.ids and 'sm' in app.root.ids and app.root.ids.sm.current=='dashboard') else (0.23,0.23,0.25,1))
+                on_release: app.switch_tab('dashboard')
             Button:
                 text: "League Tracker"
                 size_hint_x: None
@@ -478,7 +531,7 @@
                 ScrollView:
                     canvas.after:
                         Color:
-                            rgba: 1, 1, 1, 1
+                            rgba: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                         Line:
                             rectangle: (self.x, self.y, self.width, self.height)
                             width: 1.2
@@ -498,7 +551,7 @@
                 ScrollView:
                     canvas.after:
                         Color:
-                            rgba: 1, 1, 1, 1
+                            rgba: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                         Line:
                             rectangle: (self.x, self.y, self.width, self.height)
                             width: 1.2
@@ -540,7 +593,7 @@
         ScrollView:
             canvas.after:
                 Color:
-                    rgba: 1, 1, 1, 1
+                    rgba: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                 Line:
                     rectangle: (self.x, self.y, self.width, self.height)
                     width: 1.2
@@ -563,7 +616,7 @@
             height: dp(76)
             canvas.before:
                 Color:
-                    rgba: 1,1,1,1
+                    rgba: app.theme['surface'] if hasattr(app, 'theme') else (0.15, 0.15, 0.15, 1)
                 Rectangle:
                     pos: self.pos
                     size: self.size
@@ -582,7 +635,7 @@
                     TitleLabel:
                         id: event_title
                         text: root.event_title
-                        color: 0.1, 0.1, 0.1, 1
+                        color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                         size_hint_x: None
                         size_hint_y: None
                         height: dp(38)
@@ -603,14 +656,14 @@
                 BodyLabel:
                     id: round_label
                     text: "Round: " + str(root.current_round)
-                    color: 0.1, 0.1, 0.1, 1
+                    color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                 Widget:
                 HeaderLabel:
                     id: timer_label
                     text: root.timer_text
                     size_hint_x: None
                     width: dp(130)
-                    color: 0.1, 0.1, 0.1, 1
+                    color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
         ScrollView:
             GridLayout:
                 id: matches_grid
@@ -643,12 +696,233 @@
                 text: "Back to Events"
                 on_release: root.manager.current = "eventslist"
 
+<DashboardRow>:
+    size_hint_y: None
+    height: dp(64)
+    padding: dp(8)
+    spacing: dp(8)
+    opacity: 0
+    canvas.before:
+        PushMatrix
+        Translate:
+            y: self.anim_y
+        Color:
+            rgba: (app.theme['surface'] if hasattr(app, 'theme') else (0.15, 0.15, 0.15, 1)) if (self.row_index % 2 == 0) else ((app.theme['surface'][0]+0.05, app.theme['surface'][1]+0.05, app.theme['surface'][2]+0.05, 1) if hasattr(app, 'theme') else (0.2, 0.2, 0.2, 1))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+    canvas.after:
+        PopMatrix
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: root.player_name
+            bold: True
+            color: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+        Label:
+            text: root.summary
+            font_size: '12sp'
+            markup: True
+            color: app.theme['on_surface'] if hasattr(app, 'theme') else (0.8, 0.8, 0.8, 1)
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+    Button:
+        text: "Details"
+        size_hint_x: None
+        width: dp(80)
+        on_release: root.on_release()
+
+<DashboardScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(8)
+        TitleLabel:
+            text: "Community"
+            size_hint_y: None
+            height: dp(32)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(36)
+            TextInput:
+                id: filter_input
+                hint_text: "Filter players..."
+                multiline: False
+                on_text: root.refresh()
+        ScrollView:
+            GridLayout:
+                id: players_grid
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(8)
+
+<PlayerStatsScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(10)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            TitleLabel:
+                text: root.player_name
+                size_hint_y: None
+                height: dp(32)
+            Button:
+                text: "Back"
+                size_hint_x: None
+                width: dp(80)
+                on_release: root.manager.current = 'dashboard'
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: None
+            height: dp(100)
+            canvas.before:
+                Color:
+                    rgba: 0.16, 0.47, 0.96, 0.1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(12)]
+            padding: dp(10)
+            Label:
+                id: total_matches
+                text: "Total Matches: 0"
+                color: app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1)
+            Label:
+                id: winrate
+                text: "Overall Winrate: 0%"
+                bold: True
+                color: 0.16, 0.47, 0.96, 1
+            Label:
+                id: record
+                text: "Record: 0W - 0L - 0D"
+                color: app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1)
+        
+        HeaderLabel:
+            text: "Opponent Breakdown"
+            size_hint_y: None
+            height: dp(30)
+            color: app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1)
+        
+        ScrollView:
+            GridLayout:
+                id: opponents_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(4)
+
+<PairStatsScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(10)
+        spacing: dp(10)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            TitleLabel:
+                text: root.p1_name + " vs " + root.p2_name
+                size_hint_y: None
+                height: dp(32)
+            Button:
+                text: "Back"
+                size_hint_x: None
+                width: dp(80)
+                on_release: root.manager.current = 'playerstats'
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: None
+            height: dp(140)
+            canvas.before:
+                Color:
+                    rgba: 0.16, 0.47, 0.96, 0.1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(12)]
+            padding: dp(10)
+            BodyLabel:
+                id: games_played
+                text: "Games Played: 0"
+            BodyLabel:
+                id: winrate_p1
+                text: "Winrate P1: 0%"
+            BodyLabel:
+                id: winrate_p2
+                text: "Winrate P2: 0%"
+            BodyLabel:
+                id: record
+                text: "Record: 0 - 0 - 0"
+                bold: True
+            BodyLabel:
+                id: events_together
+                text: "Events Together: 0"
+        
+        HeaderLabel:
+            text: "Match History"
+            size_hint_y: None
+            height: dp(30)
+
+        ScrollView:
+            GridLayout:
+                id: matches_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(4)
+
+<PairMatchRow>:
+    size_hint_y: None
+    height: dp(48)
+    padding: dp(8)
+    spacing: dp(8)
+    canvas.before:
+        Color:
+            rgba: (app.theme['surface'] if hasattr(app, 'theme') else (0.15, 0.15, 0.15, 1))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(8)]
+    BodyLabel:
+        text: root.event_name
+        size_hint_x: 0.4
+        halign: 'left'
+        shorten: True
+        shorten_from: 'right'
+    CaptionLabel:
+        text: "Rd " + str(root.round_num)
+        size_hint_x: 0.15
+        halign: 'center'
+    BodyLabel:
+        text: root.score
+        size_hint_x: 0.25
+        halign: 'center'
+        bold: True
+    BodyLabel:
+        text: root.result
+        size_hint_x: 0.2
+        halign: 'right'
+        color: (0.13, 0.54, 0.13, 1) if root.result == "Win" else ((0.86, 0.08, 0.19, 1) if root.result == "Loss" else (0.4, 0.4, 0.4, 1))
+
 <MatchRow>:
     size_hint_y: None
     height: dp(48)
     spacing: dp(8)
     padding: dp(8), 0
+    opacity: 0
     canvas.before:
+        PushMatrix
+        Translate:
+            y: self.anim_y
         # Alternating background rows with gentle bye tint
         Color:
             rgba: root.get_bg()
@@ -657,6 +931,7 @@
             size: self.width, self.height
             radius: [dp(10),]
     canvas.after:
+        PopMatrix
         Color:
             rgba: (app.theme['on_surface'][0], app.theme['on_surface'][1], app.theme['on_surface'][2], 0.12) if hasattr(app, 'theme') else (0,0,0,0.12)
         Line:
@@ -664,7 +939,7 @@
             width: 1
     Label:
         text: root.p1_name
-        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1))
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1))
     PrimaryButton:
         id: p1btn
         text: str(root.score1)
@@ -676,7 +951,7 @@
         text: "-"
         size_hint_x: None
         width: dp(20)
-        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1))
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1))
     PrimaryButton:
         id: p2btn
         text: str(root.score2)
@@ -686,7 +961,7 @@
         on_release: root.cycle_score(2)
     Label:
         text: root.p2_name
-        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (0.1,0.1,0.1,1)) if not root.bye else ((0.2,0.2,0.2,1) if not hasattr(app,'theme') else (app.theme['on_surface'][0]-0.25, app.theme['on_surface'][1]-0.25, app.theme['on_surface'][2]-0.25, 1))
+        color: (app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1)) if not root.bye else ((0.4,0.4,0.4,1) if not hasattr(app,'theme') else (app.theme['on_surface'][0]-0.25, app.theme['on_surface'][1]-0.25, app.theme['on_surface'][2]-0.25, 1))
 
 <SeatingScreen>:
     BoxLayout:
@@ -702,7 +977,7 @@
             do_scroll_x: False
             canvas.after:
                 Color:
-                    rgba: 1, 1, 1, 1
+                    rgba: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                 Line:
                     rectangle: (self.x, self.y, self.width, self.height)
                     width: 1.2
@@ -752,7 +1027,7 @@
             do_scroll_x: False
             canvas.after:
                 Color:
-                    rgba: 1, 1, 1, 1
+                    rgba: app.theme['on_surface'] if hasattr(app, 'theme') else (1, 1, 1, 1)
                 Line:
                     rectangle: (self.x, self.y, self.width, self.height)
                     width: 1.2
@@ -1219,10 +1494,3 @@
                     size_hint_y: None
                     height: dp(48)
                     on_release: root.do_logout()
-                SecondaryButton:
-                    text: 'Manager Reset (No Upload)'
-                    size_hint_y: None
-                    height: dp(48) if (hasattr(app, 'is_mgr') and app.is_mgr) else 0
-                    opacity: 1 if (hasattr(app, 'is_mgr') and app.is_mgr) else 0
-                    disabled: not (hasattr(app, 'is_mgr') and app.is_mgr)
-                    on_release: root.reset_data()

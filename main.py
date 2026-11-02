@@ -31,6 +31,9 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
+
+# Tactile feedback scale property
+Button.scale = NumericProperty(1.0)
 from kivy.core.audio import SoundLoader
 from pairing import get_name_for_event_player, compute_standings, generate_round_one, compute_next_round_pairings
 from timer import DraftTimer, IconButton
@@ -39,6 +42,10 @@ from kivy.utils import platform
 from kivy.metrics import dp
 from kivy.animation import Animation
 from db import get_db_path
+
+# Configure keyboard behavior for a more fluid/native experience
+# 'below_target' zooms the layout to keep TextInput visible
+Window.softinput_mode = 'below_target'
 
 # Ensure desktop window starts in a smartphone-like portrait proportion (20:9)
 # Only apply on desktop platforms to avoid interfering with mobile builds
@@ -85,6 +92,8 @@ KV = r'''
             TextInput:
                 id: filter_input
                 hint_text: "Filter..."
+                multiline: False
+                write_tab: False
                 on_text: root.filter_players(self.text)
 
         ScrollView:
@@ -124,6 +133,8 @@ KV = r'''
             id: name_input
             hint_text: "Player name"
             multiline: False
+            write_tab: False
+            on_text_validate: root.save_player(self.text)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
@@ -150,6 +161,7 @@ KV = r'''
                 id: event_name
                 hint_text: "Event name"
                 multiline: False
+                write_tab: False
             Spinner:
                 id: event_type
                 text: "draft"
@@ -163,11 +175,13 @@ KV = r'''
                 id: rounds_input
                 hint_text: "Rounds (e.g. 3)"
                 multiline: False
+                write_tab: False
                 input_filter: "int"
             TextInput:
                 id: round_time
                 hint_text: "Round time (sec)"
                 multiline: False
+                write_tab: False
                 input_filter: "int"
             Button:
                 text: "Randomize seating"
@@ -193,6 +207,8 @@ KV = r'''
                 id: guest_name
                 hint_text: "Guest name (optional)"
                 multiline: False
+                write_tab: False
+                on_text_validate: root.add_guest(self.text)
             Button:
                 text: "Add guest to list"
                 on_release:
@@ -308,12 +324,18 @@ KV = r'''
     size_hint_y: None
     height: dp(48)
     spacing: dp(8)
+    opacity: 0
     canvas.before:
+        PushMatrix
+        Translate:
+            y: self.anim_y
         Color:
             rgba: (0.95,0.95,0.95,1) if self.bye else (1,1,1,1)
         Rectangle:
             pos: self.pos
             size: self.size
+    canvas.after:
+        PopMatrix
     Label:
         text: root.p1_name
         color: 0,0,0,1
@@ -630,6 +652,298 @@ def _rebuild_all_nicknames():
 # ----------------------
 # UI Widgets
 # ----------------------
+class DashboardRow(BoxLayout):
+    player_id = NumericProperty(0)
+    player_name = StringProperty("")
+    summary = StringProperty("")
+    row_index = NumericProperty(0)
+    anim_y = NumericProperty(dp(20))
+
+    def on_kv_post(self, base_widget):
+        anim = Animation(opacity=1, anim_y=0, d=0.3, t='out_quad')
+        Clock.schedule_once(lambda dt: anim.start(self), self.row_index * 0.05)
+
+    def on_release(self):
+        app = App.get_running_app()
+        app.root.ids.sm.get_screen('playerstats').show_for_player(self.player_id)
+        app.root.ids.sm.current = 'playerstats'
+
+class DashboardScreen(Screen):
+    def on_enter(self):
+        self.refresh()
+
+    def refresh(self):
+        grid = self.ids.players_grid
+        grid.clear_widgets()
+        # Filter is optional but good to have
+        filt = getattr(self.ids, 'filter_input', None)
+        q = "%" + (filt.text if filt else "") + "%"
+        
+        cur = db.DB.execute("SELECT id, name FROM players WHERE name LIKE ? ORDER BY name", (q,))
+        players = cur.fetchall()
+        
+        for i, (pid, name) in enumerate(players):
+            stats = self.get_summary_stats(pid)
+            row = DashboardRow()
+            row.player_id = pid
+            row.player_name = name
+            row.summary = f"[b]Winrate: {stats['winrate']:.1f}%[/b] ({stats['wins']}-{stats['losses']})"
+            row.row_index = i
+            grid.add_widget(row)
+
+    def get_summary_stats(self, player_id):
+        cur = db.DB.execute("""
+            SELECT m.player1, m.player2, m.score_p1, m.score_p2, m.bye
+            FROM matches m
+            JOIN events e ON m.event_id = e.id
+            JOIN event_players ep1 ON m.player1 = ep1.id
+            LEFT JOIN event_players ep2 ON m.player2 = ep2.id
+            WHERE e.status = 'closed' AND (ep1.player_id = ? OR (ep2.id IS NOT NULL AND ep2.player_id = ?))
+        """, (player_id, player_id))
+        matches = cur.fetchall()
+        
+        total = 0
+        wins = 0
+        losses = 0
+        for p1_eid, p2_eid, s1, s2, bye in matches:
+            total += 1
+            if bye:
+                wins += 1
+                continue
+            
+            # Map event_player_id back to actual player_id
+            p1 = db.DB.execute("SELECT player_id FROM event_players WHERE id=?", (p1_eid,)).fetchone()[0]
+            p2 = db.DB.execute("SELECT player_id FROM event_players WHERE id=?", (p2_eid,)).fetchone()[0]
+            
+            is_p1 = (p1 == player_id)
+            my_s = s1 if is_p1 else s2
+            opp_s = s2 if is_p1 else s1
+            if my_s > opp_s:
+                wins += 1
+            elif my_s < opp_s:
+                losses += 1
+        
+        wr = (wins / total * 100) if total > 0 else 0
+        return {'winrate': wr, 'wins': wins, 'losses': losses}
+
+class PlayerStatsScreen(Screen):
+    player_id = NumericProperty(0)
+    player_name = StringProperty("")
+    
+    def show_for_player(self, player_id):
+        self.player_id = player_id
+        row = db.DB.execute("SELECT name FROM players WHERE id=?", (player_id,)).fetchone()
+        self.player_name = row[0] if row else "Unknown"
+        self.refresh()
+
+    def compare_with_opponent(self, opp_id):
+        app = App.get_running_app()
+        app.root.ids.sm.get_screen('pairstats').show_for_pair(self.player_id, opp_id)
+        app.root.ids.sm.current = 'pairstats'
+
+    def refresh(self):
+        if not self.player_id: return
+        stats = self.compute_deep_stats(self.player_id)
+        self.ids.total_matches.text = f"Total Matches: {stats['total']}"
+        self.ids.winrate.text = f"Overall Winrate: {stats['winrate']:.1f}%"
+        self.ids.record.text = f"Record: {stats['wins']}W - {stats['losses']}L - {stats['draws']}D"
+        
+        # Opponents
+        opp_list = self.ids.opponents_list
+        opp_list.clear_widgets()
+        
+        # Sort opponents by net wins
+        sorted_opps = sorted(stats['opponents'].items(), key=lambda x: x[1]['wins'] - x[1]['losses'], reverse=True)
+        
+        app = App.get_running_app()
+        text_color = app.theme['on_surface'] if hasattr(app, 'theme') else (1,1,1,1)
+
+        for opp_id, ostats in sorted_opps:
+            opp_name = db.DB.execute("SELECT name FROM players WHERE id=?", (opp_id,)).fetchone()
+            opp_name = opp_name[0] if opp_name else "Guest"
+            net = ostats['wins'] - ostats['losses']
+            color = "[color=228B22]" if net > 0 else ("[color=DC1430]" if net < 0 else "[color=666666]")
+            
+            box = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+            lbl = Label(markup=True, size_hint_x=1,
+                        text=f"{opp_name}: {ostats['wins']}W - {ostats['losses']}L ({color}{net:+} net[/color])",
+                        color=text_color)
+            btn = Button(text="Pair Stats", size_hint_x=None, width=dp(90),
+                         on_release=lambda x, _oid=opp_id: self.compare_with_opponent(_oid))
+            box.add_widget(lbl)
+            box.add_widget(btn)
+            opp_list.add_widget(box)
+
+    def compute_deep_stats(self, player_id):
+        cur = db.DB.execute("""
+            SELECT m.player1, m.player2, m.score_p1, m.score_p2, m.bye
+            FROM matches m
+            JOIN events e ON m.event_id = e.id
+            JOIN event_players ep1 ON m.player1 = ep1.id
+            LEFT JOIN event_players ep2 ON m.player2 = ep2.id
+            WHERE e.status = 'closed' AND (ep1.player_id = ? OR (ep2.id IS NOT NULL AND ep2.player_id = ?))
+        """, (player_id, player_id))
+        matches = cur.fetchall()
+        
+        total = 0
+        wins = 0
+        losses = 0
+        draws = 0
+        opponents = {}
+        
+        for p1_eid, p2_eid, s1, s2, bye in matches:
+            total += 1
+            if bye:
+                wins += 1
+                continue
+            
+            # Map event_player_ids back to actual player_ids
+            p1 = db.DB.execute("SELECT player_id FROM event_players WHERE id=?", (p1_eid,)).fetchone()[0]
+            p2 = db.DB.execute("SELECT player_id FROM event_players WHERE id=?", (p2_eid,)).fetchone()[0]
+            
+            is_p1 = (p1 == player_id)
+            my_s = s1 if is_p1 else s2
+            opp_s = s2 if is_p1 else s1
+            opp_id = p2 if is_p1 else p1
+            
+            if opp_id not in opponents:
+                opponents[opp_id] = {'wins': 0, 'losses': 0, 'draws': 0}
+            
+            if my_s > opp_s:
+                wins += 1
+                opponents[opp_id]['wins'] += 1
+            elif my_s < opp_s:
+                losses += 1
+                opponents[opp_id]['losses'] += 1
+            else:
+                draws += 1
+                opponents[opp_id]['draws'] += 1
+        
+        wr = (wins / total * 100) if total > 0 else 0
+        return {
+            'total': total, 'wins': wins, 'losses': losses, 'draws': draws,
+            'winrate': wr, 'opponents': opponents
+        }
+
+class PairStatsScreen(Screen):
+    p1_id = NumericProperty(0)
+    p2_id = NumericProperty(0)
+    p1_name = StringProperty("")
+    p2_name = StringProperty("")
+
+    def show_for_pair(self, p1_id, p2_id):
+        self.p1_id = p1_id
+        self.p2_id = p2_id
+        
+        # Load names
+        rows = db.DB.execute("SELECT id, name FROM players WHERE id IN (?,?)", (p1_id, p2_id)).fetchall()
+        name_map = {r[0]: r[1] for r in rows}
+        self.p1_name = name_map.get(p1_id, "Unknown")
+        self.p2_name = name_map.get(p2_id, "Unknown")
+        
+        self.refresh()
+
+    def refresh(self):
+        if not self.p1_id or not self.p2_id:
+            return
+        
+        stats = self.compute_pair_stats(self.p1_id, self.p2_id)
+        
+        # UI updates via IDs
+        self.ids.games_played.text = f"Games Played: {stats['total']}"
+        self.ids.winrate_p1.text = f"{self.p1_name} Winrate: {stats['p1_winrate']:.1f}%"
+        self.ids.winrate_p2.text = f"{self.p2_name} Winrate: {stats['p2_winrate']:.1f}%"
+        self.ids.record.text = f"Record: {stats['p1_wins']} - {stats['p2_wins']} - {stats['draws']}"
+        self.ids.events_together.text = f"Events Together: {stats['events_count']}"
+
+        # Matches list
+        match_list = self.ids.matches_list
+        match_list.clear_widgets()
+        for m in stats['matches']:
+            row = PairMatchRow()
+            row.event_name = m['event_name']
+            row.round_num = m['round']
+            row.score = f"{m['s1']} - {m['s2']}"
+            row.result = m['result']
+            match_list.add_widget(row)
+
+    def compute_pair_stats(self, p1_id, p2_id):
+        # 1. Matches between them
+        cur = db.DB.execute("""
+            SELECT m.score_p1, m.score_p2, m.player1, ep1.player_id, e.name, m.round
+            FROM matches m
+            JOIN events e ON m.event_id = e.id
+            JOIN event_players ep1 ON m.player1 = ep1.id
+            JOIN event_players ep2 ON m.player2 = ep2.id
+            WHERE e.status = 'closed'
+            AND ((ep1.player_id = ? AND ep2.player_id = ?) OR (ep1.player_id = ? AND ep2.player_id = ?))
+            ORDER BY e.id DESC, m.round DESC
+        """, (p1_id, p2_id, p2_id, p1_id))
+        matches_rows = cur.fetchall()
+        
+        total = 0
+        p1_wins = 0
+        p2_wins = 0
+        draws = 0
+        match_details = []
+        
+        for s1, s2, first_player_eid, first_player_pid, event_name, round_num in matches_rows:
+            total += 1
+            # Normalize so s1 is always p1_id's score
+            if first_player_pid == p1_id:
+                my_s, opp_s = s1, s2
+            else:
+                my_s, opp_s = s2, s1
+            
+            res = "Draw"
+            if my_s > opp_s:
+                p1_wins += 1
+                res = "Win"
+            elif my_s < opp_s:
+                p2_wins += 1
+                res = "Loss"
+            else:
+                draws += 1
+
+            match_details.append({
+                'event_name': event_name,
+                'round': round_num,
+                's1': my_s,
+                's2': opp_s,
+                'result': res
+            })
+        
+        # 2. Events played together
+        cur_e = db.DB.execute("""
+            SELECT COUNT(DISTINCT ep1.event_id)
+            FROM event_players ep1
+            JOIN event_players ep2 ON ep1.event_id = ep2.event_id
+            JOIN events e ON ep1.event_id = e.id
+            WHERE e.status = 'closed'
+            AND ep1.player_id = ? AND ep2.player_id = ?
+        """, (p1_id, p2_id))
+        events_count = cur_e.fetchone()[0]
+        
+        p1_wr = (p1_wins / total * 100) if total > 0 else 0
+        p2_wr = (p2_wins / total * 100) if total > 0 else 0
+        
+        return {
+            'total': total,
+            'p1_wins': p1_wins,
+            'p2_wins': p2_wins,
+            'draws': draws,
+            'p1_winrate': p1_wr,
+            'p2_winrate': p2_wr,
+            'events_count': events_count,
+            'matches': match_details
+        }
+
+class PairMatchRow(BoxLayout):
+    event_name = StringProperty("")
+    round_num = NumericProperty(0)
+    score = StringProperty("")
+    result = StringProperty("")
+
 class MatchRow(BoxLayout):
     p1_name = StringProperty("")
     p2_name = StringProperty("")
@@ -639,6 +953,13 @@ class MatchRow(BoxLayout):
     bye = NumericProperty(0)
     row_index = NumericProperty(0)
     on_score_change = ObjectProperty(None, allownone=True)
+    anim_y = NumericProperty(dp(20))
+
+    def on_kv_post(self, base_widget):
+        # Entry animation: fade in and slide up
+        anim = Animation(opacity=1, anim_y=0, d=0.3, t='out_quad')
+        # Use Clock to delay a bit based on row_index for a staggered effect
+        Clock.schedule_once(lambda dt: anim.start(self), self.row_index * 0.05)
 
     def get_bg(self):
         try:
@@ -866,8 +1187,12 @@ class PlayersScreen(Screen):
             pass
         self.refresh()
 
-    def _add_player_row(self, pid, name):
-        row = BoxLayout(size_hint_y=None, height=dp(56))
+    def _add_player_row(self, pid, name, index=0):
+        row = BoxLayout(size_hint_y=None, height=dp(56), opacity=0)
+        # Entry animation
+        anim = Animation(opacity=1, d=0.25, t='out_quad')
+        Clock.schedule_once(lambda dt: anim.start(row), index * 0.04)
+
         # Show full name only on Players main list
         lbl = Label(text=f"{name}", color=(1,1,1,1))
         btn_del = Button(text="Delete", size_hint_x=None, width=dp(200))
@@ -892,16 +1217,16 @@ class PlayersScreen(Screen):
         grid = self.ids.players_list
         grid.clear_widgets()
         cur = db.DB.execute("SELECT id, name FROM players ORDER BY name")
-        for pid, name in cur.fetchall():
-            self._add_player_row(pid, name)
+        for i, (pid, name) in enumerate(cur.fetchall()):
+            self._add_player_row(pid, name, index=i)
 
     def filter_players(self, text):
         grid = self.ids.players_list
         grid.clear_widgets()
         q = "%" + (text or "") + "%"
         cur = db.DB.execute("SELECT id, name FROM players WHERE name LIKE ? ORDER BY name", (q,))
-        for pid, name in cur.fetchall():
-            self._add_player_row(pid, name)
+        for i, (pid, name) in enumerate(cur.fetchall()):
+            self._add_player_row(pid, name, index=i)
 
     def delete_player(self, pid, name):
         if not _is_manager():
@@ -1042,14 +1367,18 @@ class CreateEventScreen(Screen):
             self.selected_ids = set()
         cur = db.DB.execute("SELECT id, COALESCE(nickname, name) as dname, name FROM players ORDER BY name")
         rows = cur.fetchall()
-        for pid, disp_name, full_name in rows:
+        for i, (pid, disp_name, full_name) in enumerate(rows):
             # Skip players already added to the event (they will appear in the Selected list)
             if pid in self.selected_ids:
                 continue
             hay = f"{disp_name} {full_name}".lower()
             if filt and filt not in hay:
                 continue
-            row = BoxLayout(size_hint_y=None, height=dp(56))
+            row = BoxLayout(size_hint_y=None, height=dp(56), opacity=0)
+            # Entry animation
+            anim = Animation(opacity=1, d=0.2, t='out_quad')
+            Clock.schedule_once(lambda dt: anim.start(row), i * 0.03)
+
             lbl = Label(text=disp_name)
             # Make label flexible and centered; button has fixed width (prevents clipping)
             try:
@@ -1208,8 +1537,12 @@ class EventsListScreen(Screen):
         grid = self.ids.events_grid
         grid.clear_widgets()
         cur = db.DB.execute("SELECT id, name, type, status FROM events ORDER BY (status='active') DESC, created_at DESC")
-        for eid, name, etype, status in cur.fetchall():
-            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=dp(68))
+        for i, (eid, name, etype, status) in enumerate(cur.fetchall()):
+            btn = Button(text=f"{name} [{etype}] ({status})", size_hint_y=None, height=dp(68), opacity=0)
+            # Entry animation
+            anim = Animation(opacity=1, d=0.25, t='out_quad')
+            Clock.schedule_once(lambda dt, _b=btn: anim.start(_b), i * 0.05)
+
             def open_event(inst, _eid=eid, _status=status):
                 if _status == 'closed':
                     self.manager.get_screen('standings').show_for_event(_eid)
@@ -3949,105 +4282,6 @@ class SettingsScreen(Screen):
             self.last_status = f"Error during upload: {type(e).__name__}: {e}\nURL: {url}"
             App.get_running_app().show_toast('Network error while uploading')
 
-    def reset_data(self):
-        # Manager-only: two-step confirmation and reset of non-player data
-        app = App.get_running_app()
-        if not _is_manager():
-            if app:
-                app.show_toast('Only managers can reset data')
-            return
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.label import Label
-        from kivy.uix.button import Button
-        from kivy.uix.popup import Popup
-        # Step 2 action
-        def _do_reset(*_):
-            try:
-                # Perform DB cleanup
-                try:
-                    from db import reset_non_player_data
-                    ok = reset_non_player_data()
-                except Exception:
-                    ok = False
-                # Also remove legacy bingo state file (prevents re-import)
-                try:
-                    # Reuse BingoScreen logic to resolve path without importing full class
-                    try:
-                        from db import _get_persistent_db_path as _gpp
-                        legacy_path = _gpp('bingo_state.json')
-                    except Exception:
-                        legacy_path = os.path.join(os.path.expanduser('~'), '.draft_buddy', 'bingo_state.json')
-                    if os.path.exists(legacy_path):
-                        os.remove(legacy_path)
-                except Exception:
-                    pass
-                # Refresh affected screens
-                try:
-                    sm = app.root.ids.sm if app and app.root and hasattr(app.root, 'ids') else None
-                except Exception:
-                    sm = None
-                if sm:
-                    try:
-                        bs = sm.get_screen('bingo')
-                        if bs and hasattr(bs, 'refresh_all'):
-                            bs.refresh_all()
-                        elif bs and hasattr(bs, 'refresh_from_db'):
-                            bs.refresh_from_db()
-                    except Exception:
-                        pass
-                    try:
-                        ls = sm.get_screen('league')
-                        if ls and hasattr(ls, '_load_leagues'):
-                            ls._load_leagues()
-                    except Exception:
-                        pass
-                    try:
-                        es = sm.get_screen('eventslist')
-                        if es and hasattr(es, 'refresh'):
-                            es.refresh()
-                    except Exception:
-                        pass
-                if app:
-                    app.show_toast('Reset complete' if ok else 'Reset failed')
-            except Exception:
-                try:
-                    if app:
-                        app.show_toast('Reset failed')
-                except Exception:
-                    pass
-        # Step 2 popup (with swapped Yes/No positions)
-        def _open_step2(*_):
-            box2 = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
-            lbl2 = Label(text='This will erase: events, leagues, and bingo progress.\nPlayers are kept.\nNo automatic upload will occur.\nProceed?', halign='center')
-            lbl2.bind(size=lambda inst, v: setattr(inst, 'text_size', (inst.width, None)))
-            box2.add_widget(lbl2)
-            row2 = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
-            # Swap button positions compared to step 1
-            btn_no2 = Button(text='No')
-            btn_yes2 = Button(text='Yes')
-            row2.add_widget(btn_no2)
-            row2.add_widget(btn_yes2)
-            box2.add_widget(row2)
-            pop2 = Popup(title='Confirm reset (2/2)', content=box2, size_hint=(0.8, 0.4))
-            btn_yes2.bind(on_release=lambda *_: (pop2.dismiss(), _do_reset()))
-            btn_no2.bind(on_release=lambda *_: pop2.dismiss())
-            pop2.open()
-        # Step 1 popup
-        box1 = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(10))
-        lbl1 = Label(text='Manager reset: delete all events, leagues, and bingo progress.\nPlayers will remain.\nThis does NOT push to server automatically.\nAre you absolutely sure?', halign='center')
-        lbl1.bind(size=lambda inst, v: setattr(inst, 'text_size', (inst.width, None)))
-        box1.add_widget(lbl1)
-        row1 = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
-        # Intentionally place Yes on the left and No on the right (unusual) for step 1
-        btn_yes1 = Button(text='Yes')
-        btn_no1 = Button(text='No')
-        row1.add_widget(btn_yes1)
-        row1.add_widget(btn_no1)
-        box1.add_widget(row1)
-        pop1 = Popup(title='Confirm reset (1/2)', content=box1, size_hint=(0.8, 0.4))
-        btn_yes1.bind(on_release=lambda *_: (pop1.dismiss(), _open_step2()))
-        btn_no1.bind(on_release=lambda *_: pop1.dismiss())
-        pop1.open()
 
 
 class BottomNav(BoxLayout):
@@ -4056,7 +4290,7 @@ class BottomNav(BoxLayout):
         Clock.schedule_once(lambda dt: self.center_on(getattr(App.get_running_app().root.ids.sm, 'current', 'players')), 0)
 
     def _buttons_per_group(self):
-        return 7  # players, events, league, bingo, drafttimer, lifetracker, settings
+        return 8  # players, events, dashboard, league, bingo, drafttimer, lifetracker, settings
 
     def _group_offset(self):
         # Number of widgets before the middle group starts
@@ -4067,7 +4301,7 @@ class BottomNav(BoxLayout):
             row = self.ids.nav_row
         except Exception:
             return None
-        labels = ['players', 'eventslist', 'league', 'bingo', 'drafttimer', 'lifetracker', 'settings']
+        labels = ['players', 'eventslist', 'dashboard', 'league', 'bingo', 'drafttimer', 'lifetracker', 'settings']
         try:
             idx_in_group = labels.index(target)
         except ValueError:
@@ -4282,9 +4516,10 @@ class EventsApp(App):
     theme = DictProperty({
         'primary': (0.16, 0.47, 0.96, 1),
         'on_primary': (1, 1, 1, 1),
-        'surface': (0.95, 0.95, 0.95, 1),
-        'on_surface': (0.1, 0.1, 0.1, 1),
-        'background': (0.98, 0.98, 0.98, 1),
+        'surface': (0.15, 0.15, 0.15, 1),
+        'on_surface': (0.9, 0.9, 0.9, 1),
+        'background': (0.05, 0.05, 0.05, 1),
+        'on_background': (0.95, 0.95, 0.95, 1),
         'success': (0.20, 0.70, 0.30, 1),
         'warning': (1.00, 0.75, 0.00, 1),
         'error': (0.85, 0.22, 0.22, 1),
@@ -4523,6 +4758,9 @@ class EventsApp(App):
         sm.add_widget(BingoScreen(name="bingo"))
         sm.add_widget(DraftTimerScreen(name="drafttimer"))
         sm.add_widget(LifeTrackerScreen(name="lifetracker"))
+        sm.add_widget(DashboardScreen(name="dashboard"))
+        sm.add_widget(PlayerStatsScreen(name="playerstats"))
+        sm.add_widget(PairStatsScreen(name="pairstats"))
         # Set initial screen based on saved auth
         try:
             auth = load_auth()
